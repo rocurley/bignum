@@ -1,5 +1,8 @@
+#![feature(test)]
 #[cfg(test)]
 extern crate proptest;
+#[cfg(test)]
+extern crate test;
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct BigInt {
@@ -57,8 +60,12 @@ pub fn add(l: &BigInt, r: &BigInt) -> BigInt {
 #[cfg(test)]
 mod tests {
     extern crate proptest;
+    extern crate rand;
+    extern crate rand_chacha;
     use crate::{add, mul_u64, schoolbook_mul, BigInt};
     use proptest::prelude::*;
+    use rand::{Rng, SeedableRng};
+    use test::Bencher;
     fn any_bigint(range: std::ops::Range<usize>) -> impl Strategy<Value = BigInt> {
         proptest::collection::vec(any::<u64>(), range).prop_map(|digits| BigInt { digits }.trim())
     }
@@ -95,5 +102,20 @@ mod tests {
             let sum_last = add(&schoolbook_mul(&a, &c), &schoolbook_mul(&b, &c));
             assert_eq!(sum_first, sum_last);
         }
+    }
+    #[bench]
+    fn bench_schoolbook_mul(bench: &mut Bencher) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let mut a_digits = vec![0; 100];
+        for x in a_digits.iter_mut() {
+            *x = rng.gen();
+        }
+        let a = BigInt { digits: a_digits };
+        let mut b_digits = vec![0; 100];
+        for x in b_digits.iter_mut() {
+            *x = rng.gen();
+        }
+        let b = BigInt { digits: b_digits };
+        bench.iter(|| schoolbook_mul(&a, &b));
     }
 }
