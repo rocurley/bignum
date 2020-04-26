@@ -41,10 +41,6 @@ fn add_to_digits(x: u64, digits: &mut [u64]) {
 }
 
 fn add_u128_to_digits(x: u128, digits: &mut [u64]) {
-    if digits.len() == 1 {
-        digits[0] += x as u64;
-        return;
-    }
     let lsb = digits[0] as u128 + ((digits[1] as u128) << 64);
     let (res, overflow) = lsb.overflowing_add(x);
     digits[0] = res as u64;
@@ -55,7 +51,7 @@ fn add_u128_to_digits(x: u128, digits: &mut [u64]) {
 }
 
 pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
-    let mut digits = vec![0; l.digits.len() + r.digits.len() + 1];
+    let mut digits = vec![0; l.digits.len() + r.digits.len() + 2];
     for (i, &l_digit) in l.digits.iter().enumerate() {
         for (j, &r_digit) in r.digits.iter().enumerate() {
             let prod = l_digit as u128 * r_digit as u128;
@@ -159,10 +155,12 @@ pub fn add(l: &BigInt, r: &BigInt) -> BigInt {
 
 #[cfg(test)]
 mod tests {
+    extern crate cpuprofiler;
     extern crate proptest;
     extern crate rand;
     extern crate rand_chacha;
     use crate::*;
+    use cpuprofiler::PROFILER;
     use proptest::prelude::*;
     use rand::{Rng, SeedableRng};
     use std::collections::HashMap;
@@ -290,10 +288,16 @@ mod tests {
     }
     #[bench]
     fn bench_schoolbook_mul(bench: &mut Bencher) {
+        PROFILER
+            .lock()
+            .unwrap()
+            .start(format!("profiling/schoolbook_mul.profile"))
+            .unwrap();
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
         let a = random_bigint(&mut rng, 100);
         let b = random_bigint(&mut rng, 100);
         bench.iter(|| schoolbook_mul(&a, &b));
+        PROFILER.lock().unwrap().stop().unwrap();
     }
     #[bench]
     fn bench_schoolbook_mul_vec(bench: &mut Bencher) {
