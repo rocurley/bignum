@@ -50,24 +50,24 @@ fn add_u128_to_digits(x: u128, digits: &mut [u64]) {
     }
 }
 
-fn add_u128_to_digits_with_carry(x: u128, digits: &mut [u64]) -> bool {
-    let lsb = digits[0] as u128 + ((digits[1] as u128) << 64);
+fn add_u128_to_digits_with_carry(x: u128, digit0: &mut u64, digit1: &mut u64) -> bool {
+    let lsb = *digit0 as u128 + ((*digit1 as u128) << 64);
     let (res, overflow) = lsb.overflowing_add(x);
-    digits[0] = res as u64;
-    digits[1] = (res >> 64) as u64;
+    *digit0 = res as u64;
+    *digit1 = (res >> 64) as u64;
     overflow
 }
 
 pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
-    if r.digits.len() == 0 {
-        return BigInt { digits: Vec::new() };
-    }
     let mut digits = vec![0; l.digits.len() + r.digits.len() + 1];
     for (i, &l_digit) in l.digits.iter().enumerate() {
         let mut carry: bool = false;
-        for (j, &r_digit) in r.digits.iter().enumerate() {
+        let mut digits_iter = digits[i..].iter_mut();
+        let mut digit0 = digits_iter.next().unwrap();
+        for (&r_digit, digit1) in r.digits.iter().zip(digits_iter) {
             let prod = (l_digit as u128) * (r_digit as u128) + ((carry as u128) << 64);
-            carry = add_u128_to_digits_with_carry(prod, &mut digits[i + j..i + j + 2]);
+            carry = add_u128_to_digits_with_carry(prod, digit0, digit1);
+            digit0 = digit1;
         }
         if carry {
             add_to_digits(1, &mut digits[i + r.digits.len()..]);
