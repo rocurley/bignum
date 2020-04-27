@@ -50,24 +50,67 @@ fn add_u128_to_digits(x: u128, digits: &mut [u64]) {
     }
 }
 
+fn add_u128_to_digits_with_carry(x: u128, digits: &mut [u64]) -> bool {
+    let lsb = digits[0] as u128 + ((digits[1] as u128) << 64);
+    let (res, overflow) = lsb.overflowing_add(x);
+    digits[0] = res as u64;
+    digits[1] = (res >> 64) as u64;
+    overflow
+}
+
 pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
+    if r.digits.len() == 0 {
+        return BigInt { digits: Vec::new() };
+    }
     let mut digits = vec![0; l.digits.len() + r.digits.len() + 2];
     for (i, &l_digit) in l.digits.iter().enumerate() {
-        for (j, &r_digit) in r.digits.iter().enumerate() {
-            let prod = l_digit as u128 * r_digit as u128;
-            add_u128_to_digits(prod, &mut digits[i + j..]);
+        let mut carry: bool = false;
+        for (r_pair, digits_pair) in r.digits.chunks(2).zip(digits[i..].chunks_mut(2)) {
+            let r_digit = r_pair[0];
+            let prod = (l_digit as u128) * (r_digit as u128) + carry as u128;
+            //println!("{:x?} * {:x?} + {:x?} = {:x?}"
+            println!(
+                "Adding {:x?} to {:x?}",
+                [prod as u64, (prod >> 64) as u64],
+                digits_pair
+            );
+            carry = add_u128_to_digits_with_carry(prod, digits_pair);
+            println!("Got {:x?}", digits_pair);
         }
+        if carry {
+            println!("Leftover carry: adding 1 to digits[{}]", i + r.digits.len());
+            add_to_digits(1, &mut digits[i + r.digits.len()..]);
+        }
+        carry = false;
+        println!("Halfway through round {:?}, digits = {:x?}", i, &digits);
+        for (r_pair, digits_pair) in r.digits[1..].chunks(2).zip(digits[i + 1..].chunks_mut(2)) {
+            let r_digit = r_pair[0];
+            let prod = (l_digit as u128) * (r_digit as u128) + carry as u128;
+            println!(
+                "Adding {:x?} to {:x?}",
+                [prod as u64, (prod >> 64) as u64],
+                digits_pair
+            );
+            carry = add_u128_to_digits_with_carry(prod, digits_pair);
+            println!("Got {:x?}", digits_pair);
+        }
+        if carry {
+            println!(
+                "Leftover carry: adding 1 to digits[{}]",
+                i + r.digits.len() + 1
+            );
+            add_to_digits(1, &mut digits[i + r.digits.len() + 1..]);
+        }
+        println!("Done with round {:?}, digits = {:x?}", i, &digits);
     }
     BigInt { digits }.trim()
 }
 
 pub fn schoolbook_mul_vec(l: &BigInt, r: &BigInt) -> BigInt {
     let mut digits = vec![0; l.digits.len() + r.digits.len() + 1];
-    dbg!(l, r);
     for (i, l_vec) in all_vectors(&l.digits).enumerate() {
         for (j, r_vec) in non_overlapping_vectors(&r.digits).enumerate() {
             let prod = r_vec * l_vec;
-            dbg!(i, j, l_vec, r_vec, prod);
             for k in 0..4 {
                 let prod_k = prod.extract(k);
                 // Since we zero-pad
@@ -219,6 +262,14 @@ mod tests {
             (BigInt { digits: vec![] }, BigInt { digits: vec![1] }),
             (BigInt { digits: vec![1] }, BigInt { digits: vec![1] }),
             (BigInt { digits: vec![1] }, BigInt { digits: vec![0, 1] }),
+            (
+                BigInt {
+                    digits: vec![0x8c6cd24f9aa81b31, 0xbdbd7388a1e4c9d9],
+                },
+                BigInt {
+                    digits: vec![0xa47022a51237d68c, 0xf482e52c7bc4ac4d],
+                },
+            ),
         ];
         for (a, b) in operands {
             let expected = schoolbook_mul(&a, &b);

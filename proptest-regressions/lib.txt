@@ -8,3 +8,5 @@ cc 644d62a55138f8b96585217bddd41e30af091c137386bd15c6476d13a0d8ad08 # shrinks to
 cc df5795cab2e8c0d268fc0bd0c839dc4f9bbd8a212160a314faab11a65941218b # shrinks to a = 0, b = 0
 cc 6b35da21a9cd802670dc4e92667b1f1249a6e77b3eb6b8fa17cee083c176ebfc # shrinks to l = 0
 cc 3ff73812ad98273041b77855f7d2c5a76637aa6a507052351e28e7372a90cb53 # shrinks to l = 0
+cc 1fec9ac615c189258e68101ba9114b7555ccb2498acda81e539fde3fe4b3b545 # shrinks to a = BigInt { digit: "[8c6cd24f9aa81b31, bdbd7388a1e4c9d9]" }, b = BigInt { digit: "[a47022a51237d68c, f482e52c7bc4ac4d]" }
+cc 912530610fedc1f1d6111004817867e4a628688bfccf4235bb26703a404ba9f2 # shrinks to a = BigInt { digit: "[73fde98ef330eb13]" }, b = BigInt { digit: "[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4ca73f50, 6d6d7b43b33eb7bb, ef00e9667b95fcd4, c03809ed69a7940d, 8d4b408187ab2453]" }
