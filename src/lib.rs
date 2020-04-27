@@ -62,22 +62,12 @@ pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
     if r.digits.len() == 0 {
         return BigInt { digits: Vec::new() };
     }
-    let mut digits = vec![0; l.digits.len() + r.digits.len() + 2];
+    let mut digits = vec![0; l.digits.len() + r.digits.len() + 1];
     for (i, &l_digit) in l.digits.iter().enumerate() {
         let mut carry: bool = false;
-        for (r_pair, digits_pair) in r.digits.chunks(2).zip(digits[i..].chunks_mut(2)) {
-            let r_digit = r_pair[0];
-            let prod = (l_digit as u128) * (r_digit as u128) + carry as u128;
-            carry = add_u128_to_digits_with_carry(prod, digits_pair);
-        }
-        if carry {
-            add_to_digits(1, &mut digits[i + r.digits.len()..]);
-        }
-        carry = false;
-        for (r_pair, digits_pair) in r.digits[1..].chunks(2).zip(digits[i + 1..].chunks_mut(2)) {
-            let r_digit = r_pair[0];
-            let prod = (l_digit as u128) * (r_digit as u128) + carry as u128;
-            carry = add_u128_to_digits_with_carry(prod, digits_pair);
+        for (j, &r_digit) in r.digits.iter().enumerate() {
+            let prod = (l_digit as u128) * (r_digit as u128) + ((carry as u128) << 64);
+            carry = add_u128_to_digits_with_carry(prod, &mut digits[i + j..i + j + 2]);
         }
         if carry {
             add_to_digits(1, &mut digits[i + r.digits.len()..]);
