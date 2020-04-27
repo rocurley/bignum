@@ -68,37 +68,20 @@ pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
         for (r_pair, digits_pair) in r.digits.chunks(2).zip(digits[i..].chunks_mut(2)) {
             let r_digit = r_pair[0];
             let prod = (l_digit as u128) * (r_digit as u128) + carry as u128;
-            //println!("{:x?} * {:x?} + {:x?} = {:x?}"
-            println!(
-                "Adding {:x?} to {:x?}",
-                [prod as u64, (prod >> 64) as u64],
-                digits_pair
-            );
             carry = add_u128_to_digits_with_carry(prod, digits_pair);
-            println!("Got {:x?}", digits_pair);
         }
         if carry {
-            println!("Leftover carry: adding 1 to digits[{}]", i + r.digits.len());
             add_to_digits(1, &mut digits[i + r.digits.len()..]);
         }
         carry = false;
-        println!("Halfway through round {:?}, digits = {:x?}", i, &digits);
         for (r_pair, digits_pair) in r.digits[1..].chunks(2).zip(digits[i + 1..].chunks_mut(2)) {
             let r_digit = r_pair[0];
             let prod = (l_digit as u128) * (r_digit as u128) + carry as u128;
-            println!(
-                "Adding {:x?} to {:x?}",
-                [prod as u64, (prod >> 64) as u64],
-                digits_pair
-            );
             carry = add_u128_to_digits_with_carry(prod, digits_pair);
-            println!("Got {:x?}", digits_pair);
         }
         if carry {
-            println!("Leftover carry: adding 1 to digits[{}]", i + r.digits.len());
             add_to_digits(1, &mut digits[i + r.digits.len()..]);
         }
-        println!("Done with round {:?}, digits = {:x?}", i, &digits);
     }
     BigInt { digits }.trim()
 }
