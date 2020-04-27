@@ -95,11 +95,8 @@ pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
             println!("Got {:x?}", digits_pair);
         }
         if carry {
-            println!(
-                "Leftover carry: adding 1 to digits[{}]",
-                i + r.digits.len() + 1
-            );
-            add_to_digits(1, &mut digits[i + r.digits.len() + 1..]);
+            println!("Leftover carry: adding 1 to digits[{}]", i + r.digits.len());
+            add_to_digits(1, &mut digits[i + r.digits.len()..]);
         }
         println!("Done with round {:?}, digits = {:x?}", i, &digits);
     }
@@ -268,6 +265,20 @@ mod tests {
                 },
                 BigInt {
                     digits: vec![0xa47022a51237d68c, 0xf482e52c7bc4ac4d],
+                },
+            ),
+            (
+                BigInt {
+                    digits: vec![0x73fde98ef330eb13],
+                },
+                BigInt {
+                    digits: vec![
+                        0x4ca73f50,
+                        0x6d6d7b43b33eb7bb,
+                        0xef00e9667b95fcd4,
+                        0xc03809ed69a7940d,
+                        0x8d4b408187ab2453,
+                    ],
                 },
             ),
         ];
