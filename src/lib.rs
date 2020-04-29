@@ -352,6 +352,51 @@ mod tests {
         )
             .prop_map(|(digits, negative)| BigInt { digits, negative }.normalize())
     }
+    proptest! {
+        #[test]
+        fn test_addition_methods_match(a in any_bigint(0..20),b in any_bigint(0..20)) {
+            let reference_sum = &a + &b;
+            assert_eq!(reference_sum, &b + &a);
+            assert_eq!(reference_sum, a.clone() + &b);
+            assert_eq!(reference_sum, b.clone() + &a);
+            assert_eq!(reference_sum, &a + b.clone());
+            assert_eq!(reference_sum, &b + a.clone());
+            assert_eq!(reference_sum, a.clone() + b.clone());
+            assert_eq!(reference_sum, b.clone() + a.clone());
+        }
+    }
+    proptest! {
+        #[test]
+        fn test_additive_identity(a in any_bigint(0..20)) {
+            assert_eq!(a, BigInt::ZERO + &a);
+        }
+    }
+    proptest! {
+        #[test]
+        fn test_additive_associatvity(
+            a in any_bigint(0..20),
+            b in any_bigint(0..20),
+            c in any_bigint(0..20),
+            ) {
+            assert_eq!(&a + (&b + &c), (&a + &b) + &c);
+        }
+    }
+    proptest! {
+        #[test]
+        fn test_add_small(a in any::<u64>(), b in any::<u64>()) {
+            let a_big = BigInt{digits: vec![a], negative: false}.normalize();
+            let b_big = BigInt{digits: vec![b], negative: false}.normalize();
+            let sum_big = a_big + b_big;
+            let (sum_small, carry_small) = a.overflowing_add(b);
+            assert_eq!(sum_big.digits[0], sum_small);
+            if carry_small {
+                assert_eq!(sum_big.digits.len(), 2);
+                assert_eq!(sum_big.digits[1], 1);
+            } else {
+                assert_eq!(sum_big.digits.len(), 1);
+            }
+       }
+    }
     #[test]
     fn hardcoded() {
         let a = BigInt {
