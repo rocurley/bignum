@@ -11,6 +11,7 @@ use std::ops::{Add, AddAssign};
 
 #[derive(PartialEq, Eq, Clone)]
 pub struct BigInt {
+    negative: bool,
     digits: Vec<u64>,
 }
 impl std::fmt::Debug for BigInt {
@@ -28,6 +29,24 @@ impl PartialOrd for BigInt {
 }
 impl Ord for BigInt {
     fn cmp(&self, other: &Self) -> Ordering {
+        let sign_cmp = other.negative.cmp(&self.negative);
+        if sign_cmp != Ordering::Equal {
+            return sign_cmp;
+        }
+        if self.negative {
+            other.cmp_abs(self)
+        } else {
+            self.cmp_abs(other)
+        }
+    }
+}
+
+impl BigInt {
+    const ZERO: BigInt = BigInt {
+        digits: Vec::new(),
+        negative: false,
+    };
+    fn cmp_abs(&self, other: &Self) -> Ordering {
         let len_cmp = self.digits.len().cmp(&other.digits.len());
         if len_cmp != Ordering::Equal {
             return len_cmp;
@@ -40,16 +59,16 @@ impl Ord for BigInt {
         }
         Ordering::Equal
     }
-}
-
-impl BigInt {
-    fn trim_in_place(&mut self) {
+    fn normalize_in_place(&mut self) {
         while self.digits.last() == Some(&0) {
             self.digits.pop();
         }
+        if self.digits.len() == 0 {
+            self.negative = false;
+        }
     }
-    fn trim(mut self) -> Self {
-        self.trim_in_place();
+    fn normalize(mut self) -> Self {
+        self.normalize_in_place();
         self
     }
 }
@@ -64,6 +83,14 @@ fn add_to_digits(x: u64, digits: &mut [u64]) {
     digits[0] = res;
     if overflow {
         add_to_digits(1, &mut digits[1..]);
+    }
+}
+
+fn sub_from_digits(x: u64, digits: &mut [u64]) {
+    let (res, overflow) = digits[0].overflowing_sub(x);
+    digits[0] = res;
+    if overflow {
+        sub_from_digits(1, &mut digits[1..]);
     }
 }
 
@@ -100,7 +127,8 @@ pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
             add_to_digits(1, &mut digits[i + r.digits.len()..]);
         }
     }
-    BigInt { digits }.trim()
+    let negative = l.negative ^ r.negative;
+    BigInt { digits, negative }.normalize()
 }
 
 pub fn schoolbook_mul_vec(l: &BigInt, r: &BigInt) -> BigInt {
@@ -120,7 +148,8 @@ pub fn schoolbook_mul_vec(l: &BigInt, r: &BigInt) -> BigInt {
             }
         }
     }
-    BigInt { digits }.trim()
+    let negative = l.negative ^ r.negative;
+    BigInt { digits, negative }.normalize()
 }
 
 fn non_overlapping_vectors<'a>(slice: &'a [u64]) -> impl Iterator<Item = u128x4> + 'a {
@@ -221,18 +250,45 @@ impl<'a, 'b> Add<&'b BigInt> for &'a BigInt {
 
 impl AddAssign for BigInt {
     fn add_assign(&mut self, mut other: Self) {
-        if self.digits.len() < other.digits.len() {
-            std::mem::swap(self, &mut other);
+        if self.negative == other.negative {
+            if self.digits.len() < other.digits.len() {
+                std::mem::swap(self, &mut other);
+            }
+            add_assign_digits(&mut self.digits, &other.digits);
+        } else {
+            match self.cmp_abs(&other) {
+                Ordering::Greater => {}
+                Ordering::Equal => {
+                    *self = BigInt::ZERO;
+                    return;
+                }
+                // We could instead use sub_assign_digits_reverse, but this avoids allocating.
+                Ordering::Less => std::mem::swap(self, &mut other),
+            }
+            sub_assign_digits(&mut self.digits, &other.digits)
         }
-        add_assign_digits(&mut self.digits, &other.digits);
-        self.trim_in_place();
+        self.normalize_in_place();
     }
 }
 
 impl<'a> AddAssign<&'a BigInt> for BigInt {
     fn add_assign(&mut self, other: &'a Self) {
-        add_assign_digits(&mut self.digits, &other.digits);
-        self.trim_in_place();
+        if self.negative == other.negative {
+            add_assign_digits(&mut self.digits, &other.digits);
+        } else {
+            match self.cmp_abs(&other) {
+                Ordering::Greater => sub_assign_digits(&mut self.digits, &other.digits),
+                Ordering::Equal => {
+                    *self = BigInt::ZERO;
+                    return;
+                }
+                Ordering::Less => {
+                    sub_assign_digits_reverse(&mut self.digits, &other.digits);
+                    self.negative = !self.negative;
+                }
+            }
+        }
+        self.normalize_in_place();
     }
 }
 
@@ -251,6 +307,32 @@ fn add_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
     }
 }
 
+// Precondition: target >= other
+fn sub_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
+    let mut borrow = false;
+    for (target_digit, &other_digit) in target.iter_mut().zip(other.iter()) {
+        let (res, borrow1) = target_digit.overflowing_sub(borrow as u64);
+        let (res, borrow2) = res.overflowing_sub(other_digit);
+        *target_digit = res;
+        borrow = borrow1 || borrow2;
+    }
+    if borrow {
+        sub_from_digits(1, &mut target[other.len()..]);
+    }
+}
+// Precondition: target <= other
+fn sub_assign_digits_reverse(target: &mut Vec<u64>, other: &[u64]) {
+    target.resize(other.len(), 0);
+    let mut borrow = false;
+    for (target_digit, &other_digit) in target.iter_mut().zip(other.iter()) {
+        let (res, borrow1) = other_digit.overflowing_sub(borrow as u64);
+        let (res, borrow2) = res.overflowing_sub(*target_digit);
+        *target_digit = res;
+        borrow = borrow1 || borrow2;
+    }
+    assert!(!borrow);
+}
+
 #[cfg(test)]
 mod tests {
     extern crate cpuprofiler;
@@ -264,23 +346,34 @@ mod tests {
     use std::collections::HashMap;
     use test::Bencher;
     fn any_bigint(range: std::ops::Range<usize>) -> impl Strategy<Value = BigInt> {
-        proptest::collection::vec(any::<u64>(), range).prop_map(|digits| BigInt { digits }.trim())
+        (
+            proptest::collection::vec(any::<u64>(), range),
+            any::<bool>(),
+        )
+            .prop_map(|(digits, negative)| BigInt { digits, negative }.normalize())
     }
     #[test]
     fn hardcoded() {
-        let a = BigInt { digits: vec![2] };
+        let a = BigInt {
+            digits: vec![2],
+            negative: false,
+        };
         let b = BigInt {
             digits: vec![0x8000000000000000, 1],
+            negative: false,
         };
         let prod = schoolbook_mul(&a, &b);
-        let c = BigInt { digits: vec![0, 3] };
+        let c = BigInt {
+            digits: vec![0, 3],
+            negative: false,
+        };
         assert_eq!(prod, c);
     }
     proptest! {
         #[test]
         fn mul_small(a in any::<u64>(), b in any::<u64>()) {
-            let a_big = BigInt{digits: vec![a]}.trim();
-            let b_big = BigInt{digits: vec![b]}.trim();
+            let a_big = BigInt{digits: vec![a], negative: false}.normalize();
+            let b_big = BigInt{digits: vec![b], negative: false}.normalize();
             let prod = schoolbook_mul(&a_big, &b_big);
             let prod_pair = (prod.digits.get(0).copied().unwrap_or(0), prod.digits.get(1).copied().unwrap_or(0));
             assert_eq!(prod_pair, mul_u64(a, b));
@@ -289,15 +382,14 @@ mod tests {
     proptest! {
         #[test]
         fn mul_zero(a in any_bigint(0..20)) {
-            let zero = BigInt{digits: vec![]};
-            let prod = schoolbook_mul(&zero, &a);
-            assert_eq!(prod, zero);
+            let prod = schoolbook_mul(&BigInt::ZERO, &a);
+            assert_eq!(prod, BigInt::ZERO);
         }
     }
     proptest! {
         #[test]
         fn mul_identity(a in any_bigint(0..20)) {
-            let one = BigInt{digits: vec![1]};
+            let one = BigInt{digits: vec![1], negative: false};
             let prod = schoolbook_mul(&one, &a);
             assert_eq!(prod, a);
         }
@@ -313,21 +405,60 @@ mod tests {
     #[test]
     fn test_schoolbook_mul_vec_hardcoded() {
         let operands = vec![
-            (BigInt { digits: vec![] }, BigInt { digits: vec![] }),
-            (BigInt { digits: vec![] }, BigInt { digits: vec![1] }),
-            (BigInt { digits: vec![1] }, BigInt { digits: vec![1] }),
-            (BigInt { digits: vec![1] }, BigInt { digits: vec![0, 1] }),
+            (
+                BigInt {
+                    digits: vec![],
+                    negative: false,
+                },
+                BigInt {
+                    digits: vec![],
+                    negative: false,
+                },
+            ),
+            (
+                BigInt {
+                    digits: vec![],
+                    negative: false,
+                },
+                BigInt {
+                    digits: vec![1],
+                    negative: false,
+                },
+            ),
+            (
+                BigInt {
+                    digits: vec![1],
+                    negative: false,
+                },
+                BigInt {
+                    digits: vec![1],
+                    negative: false,
+                },
+            ),
+            (
+                BigInt {
+                    digits: vec![1],
+                    negative: false,
+                },
+                BigInt {
+                    digits: vec![0, 1],
+                    negative: false,
+                },
+            ),
             (
                 BigInt {
                     digits: vec![0x8c6cd24f9aa81b31, 0xbdbd7388a1e4c9d9],
+                    negative: false,
                 },
                 BigInt {
                     digits: vec![0xa47022a51237d68c, 0xf482e52c7bc4ac4d],
+                    negative: false,
                 },
             ),
             (
                 BigInt {
                     digits: vec![0x73fde98ef330eb13],
+                    negative: false,
                 },
                 BigInt {
                     digits: vec![
@@ -337,6 +468,7 @@ mod tests {
                         0xc03809ed69a7940d,
                         0x8d4b408187ab2453,
                     ],
+                    negative: false,
                 },
             ),
         ];
@@ -359,7 +491,8 @@ mod tests {
         for x in digits.iter_mut() {
             *x = rng.gen();
         }
-        BigInt { digits }
+        let negative = rng.gen();
+        BigInt { digits, negative }
     }
     #[test]
     fn test_all_vectors_hardcoded() {
