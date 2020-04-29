@@ -7,7 +7,7 @@ extern crate proptest;
 extern crate test;
 
 use std::cmp::Ordering;
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 
 #[derive(PartialEq, Eq, Clone)]
 pub struct BigInt {
@@ -17,7 +17,8 @@ pub struct BigInt {
 impl std::fmt::Debug for BigInt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BigInt")
-            .field("digit", &format!("{:x?}", &self.digits))
+            .field("negative", &self.negative)
+            .field("digits", &format!("{:x?}", &self.digits))
             .finish()
     }
 }
@@ -70,6 +71,11 @@ impl BigInt {
     fn normalize(mut self) -> Self {
         self.normalize_in_place();
         self
+    }
+    fn neg_in_place(&mut self) {
+        if *self != BigInt::ZERO {
+            self.negative = !self.negative;
+        }
     }
 }
 
@@ -208,6 +214,15 @@ impl<'a> Iterator for AllVectors<'a> {
     }
 }
 
+impl Neg for BigInt {
+    type Output = Self;
+
+    fn neg(mut self) -> Self {
+        self.neg_in_place();
+        self
+    }
+}
+
 impl Add for BigInt {
     type Output = Self;
 
@@ -289,6 +304,60 @@ impl<'a> AddAssign<&'a BigInt> for BigInt {
             }
         }
         self.normalize_in_place();
+    }
+}
+impl Sub for BigInt {
+    type Output = Self;
+
+    fn sub(mut self, other: Self) -> Self {
+        self -= other;
+        self
+    }
+}
+
+impl<'a> Sub<&'a BigInt> for BigInt {
+    type Output = Self;
+
+    fn sub(mut self, other: &'a Self) -> Self {
+        self -= other;
+        self
+    }
+}
+
+impl<'a> Sub<BigInt> for &'a BigInt {
+    type Output = BigInt;
+
+    fn sub(self, mut other: BigInt) -> BigInt {
+        other -= self;
+        -other
+    }
+}
+
+impl<'a, 'b> Sub<&'b BigInt> for &'a BigInt {
+    type Output = BigInt;
+
+    fn sub(self, other: &'b BigInt) -> BigInt {
+        if self.digits.len() > other.digits.len() {
+            let mut out = self.clone();
+            out -= other;
+            out
+        } else {
+            let mut out = other.clone();
+            out -= self;
+            -out
+        }
+    }
+}
+impl SubAssign for BigInt {
+    fn sub_assign(&mut self, other: Self) {
+        *self += -other;
+    }
+}
+impl<'a> SubAssign<&'a BigInt> for BigInt {
+    fn sub_assign(&mut self, other: &'a Self) {
+        self.neg_in_place();
+        *self += other;
+        self.neg_in_place();
     }
 }
 
@@ -396,6 +465,15 @@ mod tests {
                 assert_eq!(sum_big.digits.len(), 1);
             }
        }
+    }
+    proptest! {
+        #[test]
+        fn test_subtraction_methods_match(a in any_bigint(0..20),b in any_bigint(0..20)) {
+            let reference_diff = &a - &b;
+            assert_eq!(reference_diff, a.clone() - &b);
+            assert_eq!(reference_diff, &a - b.clone());
+            assert_eq!(reference_diff, a.clone() - b.clone());
+        }
     }
     #[test]
     fn hardcoded() {
