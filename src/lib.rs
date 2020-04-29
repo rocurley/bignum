@@ -160,15 +160,50 @@ impl<'a> Iterator for AllVectors<'a> {
 impl Add for BigInt {
     type Output = Self;
 
-    fn add(self, other: Self) -> Self {
-        let (BigInt { mut digits }, BigInt { digits: small }) =
-            if self.digits.len() > other.digits.len() {
-                (self, other)
-            } else {
-                (other, self)
-            };
-        add_assign_digits(&mut digits, &small);
-        BigInt { digits }.trim()
+    fn add(mut self, other: Self) -> Self {
+        self += other;
+        self
+    }
+}
+
+impl<'a> Add<&'a BigInt> for BigInt {
+    type Output = Self;
+
+    fn add(mut self, other: &'a Self) -> Self {
+        self += other;
+        self
+    }
+}
+
+impl<'a> Add<BigInt> for &'a BigInt {
+    type Output = BigInt;
+
+    fn add(self, mut other: BigInt) -> BigInt {
+        other += self;
+        other
+    }
+}
+
+impl<'a, 'b> Add<&'b BigInt> for &'a BigInt {
+    type Output = BigInt;
+
+    fn add(self, other: &'b BigInt) -> BigInt {
+        let (big, small) = if self.digits.len() > other.digits.len() {
+            (self, other)
+        } else {
+            (other, self)
+        };
+        big.clone() + small
+    }
+}
+
+impl AddAssign for BigInt {
+    fn add_assign(&mut self, mut other: Self) {
+        if self.digits.len() < other.digits.len() {
+            std::mem::swap(self, &mut other);
+        }
+        add_assign_digits(&mut self.digits, &other.digits);
+        self.trim_in_place();
     }
 }
 
