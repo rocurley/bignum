@@ -6,6 +6,7 @@ extern crate proptest;
 #[cfg(test)]
 extern crate test;
 
+use std::cmp::Ordering;
 use std::ops::{Add, AddAssign};
 
 #[derive(PartialEq, Eq, Clone)]
@@ -17,6 +18,27 @@ impl std::fmt::Debug for BigInt {
         f.debug_struct("BigInt")
             .field("digit", &format!("{:x?}", &self.digits))
             .finish()
+    }
+}
+
+impl PartialOrd for BigInt {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for BigInt {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let len_cmp = self.digits.len().cmp(&other.digits.len());
+        if len_cmp != Ordering::Equal {
+            return len_cmp;
+        }
+        for (s, o) in self.digits.iter().rev().zip(other.digits.iter().rev()) {
+            let digit_cmp = s.cmp(o);
+            if digit_cmp != Ordering::Equal {
+                return digit_cmp;
+            }
+        }
+        Ordering::Equal
     }
 }
 
