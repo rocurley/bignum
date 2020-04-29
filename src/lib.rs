@@ -6,7 +6,9 @@ extern crate proptest;
 #[cfg(test)]
 extern crate test;
 
-#[derive(PartialEq, Eq)]
+use std::ops::{Add, AddAssign};
+
+#[derive(PartialEq, Eq, Clone)]
 pub struct BigInt {
     digits: Vec<u64>,
 }
@@ -19,10 +21,13 @@ impl std::fmt::Debug for BigInt {
 }
 
 impl BigInt {
-    fn trim(mut self) -> Self {
+    fn trim_in_place(&mut self) {
         while self.digits.last() == Some(&0) {
             self.digits.pop();
         }
+    }
+    fn trim(mut self) -> Self {
+        self.trim_in_place();
         self
     }
 }
@@ -151,19 +156,42 @@ impl<'a> Iterator for AllVectors<'a> {
         Some(out)
     }
 }
-pub fn add(l: &BigInt, r: &BigInt) -> BigInt {
-    let (BigInt { digits: big }, BigInt { digits: small }) = if l.digits.len() > r.digits.len() {
-        (l, r)
-    } else {
-        (r, l)
-    };
-    let mut digits = big.clone();
-    // TODO: prevent possible allocation here?
-    digits.push(0);
-    for (i, &x) in small.iter().enumerate() {
-        add_to_digits(x, &mut digits[i..]);
+
+impl Add for BigInt {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let (BigInt { mut digits }, BigInt { digits: small }) =
+            if self.digits.len() > other.digits.len() {
+                (self, other)
+            } else {
+                (other, self)
+            };
+        add_assign_digits(&mut digits, &small);
+        BigInt { digits }.trim()
     }
-    BigInt { digits }.trim()
+}
+
+impl<'a> AddAssign<&'a BigInt> for BigInt {
+    fn add_assign(&mut self, other: &'a Self) {
+        add_assign_digits(&mut self.digits, &other.digits);
+        self.trim_in_place();
+    }
+}
+
+fn add_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
+    let target_len = std::cmp::max(target.len(), other.len()) + 1;
+    target.resize(target_len, 0);
+    let mut carry = false;
+    for (target_digit, &other_digit) in target.iter_mut().zip(other.iter()) {
+        let (res, carry1) = target_digit.overflowing_add(carry as u64);
+        let (res, carry2) = res.overflowing_add(other_digit);
+        *target_digit = res;
+        carry = carry1 || carry2;
+    }
+    if carry {
+        add_to_digits(1, &mut target[other.len()..]);
+    }
 }
 
 #[cfg(test)]
@@ -220,8 +248,8 @@ mod tests {
     proptest! {
         #[test]
         fn distributive(a in any_bigint(0..20),b in any_bigint(0..20),c in any_bigint(0..20)) {
-            let sum_first = schoolbook_mul(&add(&a, &b), &c);
-            let sum_last = add(&schoolbook_mul(&a, &c), &schoolbook_mul(&b, &c));
+            let sum_last = schoolbook_mul(&a, &c)+ schoolbook_mul(&b, &c);
+            let sum_first = schoolbook_mul(&(a.clone() + b), &c);
             assert_eq!(sum_first, sum_last);
         }
     }
@@ -340,5 +368,12 @@ mod tests {
         let a = random_bigint(&mut rng, 100);
         let b = random_bigint(&mut rng, 100);
         bench.iter(|| schoolbook_mul_vec(&a, &b));
+    }
+    #[bench]
+    fn bench_add_assign(bench: &mut Bencher) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let mut a = random_bigint(&mut rng, 100);
+        let b = random_bigint(&mut rng, 100);
+        bench.iter(|| a += &b);
     }
 }
