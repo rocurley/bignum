@@ -7,7 +7,9 @@ extern crate proptest;
 extern crate test;
 
 use std::cmp::Ordering;
-use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
+
+const KARABTSUBA_THRESHOLD: usize = 60;
 
 #[derive(PartialEq, Eq, Clone)]
 pub struct BigInt {
@@ -133,6 +135,45 @@ pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
             add_to_digits(1, &mut digits[i + r.digits.len()..]);
         }
     }
+    let negative = l.negative ^ r.negative;
+    BigInt { digits, negative }.normalize()
+}
+
+pub fn karatsuba_mul(l: &BigInt, r: &BigInt) -> BigInt {
+    let split_len = (std::cmp::max(l.digits.len(), r.digits.len()) + 1) / 2;
+    let mut digits = vec![0; l.digits.len() + r.digits.len() + 1];
+    if split_len > l.digits.len() || split_len > r.digits.len() {
+        // TODO: Should actually split the long one, so you can do karatsuba in the recursive call
+        return schoolbook_mul(l, r);
+    }
+    let (l0_slice, l1_slice) = l.digits.split_at(split_len);
+    let (r0_slice, r1_slice) = r.digits.split_at(split_len);
+    let l0 = BigInt {
+        digits: l0_slice.to_vec(),
+        negative: false,
+    }
+    .normalize();
+    let l1 = BigInt {
+        digits: l1_slice.to_vec(),
+        negative: false,
+    }
+    .normalize();
+    let r0 = BigInt {
+        digits: r0_slice.to_vec(),
+        negative: false,
+    }
+    .normalize();
+    let r1 = BigInt {
+        digits: r1_slice.to_vec(),
+        negative: false,
+    }
+    .normalize();
+    let prod0 = &l0 * &r0;
+    let prod2 = &l1 * &r1;
+    let prod1 = &(l0 + l1) * &(r0 + r1) - &prod2 - &prod0;
+    add_assign_digits_slice(&mut digits, &prod0.digits);
+    add_assign_digits_slice(&mut digits[split_len..], &prod1.digits);
+    add_assign_digits_slice(&mut digits[2 * split_len..], &prod2.digits);
     let negative = l.negative ^ r.negative;
     BigInt { digits, negative }.normalize()
 }
@@ -364,6 +405,10 @@ impl<'a> SubAssign<&'a BigInt> for BigInt {
 fn add_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
     let target_len = std::cmp::max(target.len(), other.len()) + 1;
     target.resize(target_len, 0);
+    add_assign_digits_slice(&mut *target, other);
+}
+
+fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
     let mut carry = false;
     for (target_digit, &other_digit) in target.iter_mut().zip(other.iter()) {
         let (res, carry1) = target_digit.overflowing_add(carry as u64);
@@ -402,6 +447,18 @@ fn sub_assign_digits_reverse(target: &mut Vec<u64>, other: &[u64]) {
     assert!(!borrow);
 }
 
+impl<'a, 'b> Mul<&'b BigInt> for &'a BigInt {
+    type Output = BigInt;
+
+    fn mul(self, other: &'b BigInt) -> BigInt {
+        let min_len = std::cmp::min(self.digits.len(), other.digits.len());
+        if min_len > KARABTSUBA_THRESHOLD {
+            karatsuba_mul(self, other)
+        } else {
+            schoolbook_mul(self, other)
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     extern crate cpuprofiler;
@@ -609,6 +666,32 @@ mod tests {
             assert_eq!(expected, actual);
         }
     }
+    proptest! {
+        #[test]
+        fn test_karabtsuba_mul(a in any_bigint(0..20),b in any_bigint(0..20)) {
+            let expected = schoolbook_mul(&a, &b);
+            let actual = karatsuba_mul(&a, &b);
+            assert_eq!(expected, actual);
+        }
+    }
+    #[test]
+    fn test_karabtsuba_hardcoded() {
+        let operands = vec![(
+            BigInt {
+                digits: vec![0, 1],
+                negative: false,
+            },
+            BigInt {
+                digits: vec![1],
+                negative: false,
+            },
+        )];
+        for (a, b) in operands {
+            let expected = schoolbook_mul(&a, &b);
+            let actual = karatsuba_mul(&a, &b);
+            assert_eq!(expected, actual);
+        }
+    }
     fn random_bigint(rng: &mut rand_chacha::ChaCha8Rng, size: usize) -> BigInt {
         let mut digits = vec![0; size];
         for x in digits.iter_mut() {
@@ -670,17 +753,24 @@ mod tests {
             .start(format!("profiling/schoolbook_mul.profile"))
             .unwrap();
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
-        let a = random_bigint(&mut rng, 100);
-        let b = random_bigint(&mut rng, 100);
+        let a = random_bigint(&mut rng, 1000);
+        let b = random_bigint(&mut rng, 1000);
         bench.iter(|| schoolbook_mul(&a, &b));
         PROFILER.lock().unwrap().stop().unwrap();
     }
     #[bench]
     fn bench_schoolbook_mul_vec(bench: &mut Bencher) {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
-        let a = random_bigint(&mut rng, 100);
-        let b = random_bigint(&mut rng, 100);
+        let a = random_bigint(&mut rng, 1000);
+        let b = random_bigint(&mut rng, 1000);
         bench.iter(|| schoolbook_mul_vec(&a, &b));
+    }
+    #[bench]
+    fn bench_karabtsuba_mul(bench: &mut Bencher) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let a = random_bigint(&mut rng, 1000);
+        let b = random_bigint(&mut rng, 1000);
+        bench.iter(|| karatsuba_mul(&a, &b));
     }
     #[bench]
     fn bench_add_assign(bench: &mut Bencher) {
