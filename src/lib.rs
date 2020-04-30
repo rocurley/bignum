@@ -139,35 +139,35 @@ pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
     BigInt { digits, negative }.normalize()
 }
 
+fn split_digits_zero_padded(digits: &[u64], split: usize) -> (BigInt, BigInt) {
+    if digits.len() < split {
+        let l = BigInt {
+            digits: digits.to_vec(),
+            negative: false,
+        };
+        let r = BigInt::ZERO;
+        (l, r)
+    } else {
+        let (l, r) = digits.split_at(split);
+        let l = BigInt {
+            digits: l.to_vec(),
+            negative: false,
+        }
+        .normalize();
+        let r = BigInt {
+            digits: r.to_vec(),
+            negative: false,
+        }
+        .normalize();
+        (l, r)
+    }
+}
+
 pub fn karatsuba_mul(l: &BigInt, r: &BigInt) -> BigInt {
     let split_len = (std::cmp::max(l.digits.len(), r.digits.len()) + 1) / 2;
     let mut digits = vec![0; l.digits.len() + r.digits.len() + 1];
-    if split_len > l.digits.len() || split_len > r.digits.len() {
-        // TODO: Should actually split the long one, so you can do karatsuba in the recursive call
-        return schoolbook_mul(l, r);
-    }
-    let (l0_slice, l1_slice) = l.digits.split_at(split_len);
-    let (r0_slice, r1_slice) = r.digits.split_at(split_len);
-    let l0 = BigInt {
-        digits: l0_slice.to_vec(),
-        negative: false,
-    }
-    .normalize();
-    let l1 = BigInt {
-        digits: l1_slice.to_vec(),
-        negative: false,
-    }
-    .normalize();
-    let r0 = BigInt {
-        digits: r0_slice.to_vec(),
-        negative: false,
-    }
-    .normalize();
-    let r1 = BigInt {
-        digits: r1_slice.to_vec(),
-        negative: false,
-    }
-    .normalize();
+    let (l0, l1) = split_digits_zero_padded(&l.digits, split_len);
+    let (r0, r1) = split_digits_zero_padded(&r.digits, split_len);
     let prod0 = &l0 * &r0;
     let prod2 = &l1 * &r1;
     let prod1 = &(l0 + l1) * &(r0 + r1) - &prod2 - &prod0;
@@ -775,8 +775,8 @@ mod tests {
     #[bench]
     fn bench_add_assign(bench: &mut Bencher) {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
-        let mut a = random_bigint(&mut rng, 100);
-        let b = random_bigint(&mut rng, 100);
+        let mut a = random_bigint(&mut rng, 1000);
+        let b = random_bigint(&mut rng, 1000);
         bench.iter(|| a += &b);
     }
 }
