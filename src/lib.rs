@@ -567,25 +567,24 @@ fn toom_3_shuffle(rs: [BigInt; 5]) -> [BigInt; 5] {
         * &(&y0 + &BigInt::from_u64(2) * &y1 + &BigInt::from_u64(4) * &y2); // 2
     let mut r5 = &x2 * &y2; // inf
     */
+    // dbg!(&r1, &r2, &r3, &r4, &r5);
     r2 -= &r1;
     r3 -= &r1;
     r4 -= &r1;
     std::mem::swap(&mut r2, &mut r4);
-    let r2_div2 = div_exact(&r2, &BigInt::from_u64(2));
-    r3 += &r2_div2;
-    r4 -= r2_div2;
-    let r3_div3 = div_exact(&r3, &BigInt::from_u64(3));
-    r4 += &r3_div3;
-    dbg!(&r1, &r2, &r3, &r4, &r5); // GOOD!
-    r4 += &BigInt::from_u64(4) * &r5;
-    r3 -= &BigInt::from_u64(9) * &r5;
-    r2 -= &BigInt::from_u64(16) * &r5;
-    r4 = -div_exact(&r4, &BigInt::from_u64(2));
-    r3 -= &BigInt::from_u64(3) * &r4;
-    r2 -= &BigInt::from_u64(8) * &r4;
-    r3 = div_exact(&r3, &BigInt::from_u64(3));
-    r2 -= &BigInt::from_u64(4) * &r3;
     r2 = div_exact(&r2, &BigInt::from_u64(2));
+    r3 += &r2;
+    r4 -= &r2;
+    r3 = div_exact(&r3, &BigInt::from_u64(3));
+    r4 += &r3;
+    r4 = -div_exact(&r4, &BigInt::from_u64(2));
+    r3 -= &r4;
+    r3 -= &r5;
+
+    r2 -= &BigInt::from_u64(4) * &r4;
+    r4 -= &BigInt::from_u64(2) * &r5;
+    r2 -= &BigInt::from_u64(2) * &r3;
+
     [r1, r2, r3, r4, r5]
 }
 #[cfg(test)]
