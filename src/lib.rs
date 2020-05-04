@@ -328,6 +328,9 @@ pub fn div_exact(num: &BigInt, denom: &BigInt) -> BigInt {
     if *denom == BigInt::ZERO {
         panic!("div_dexact by 0")
     }
+    if *num == BigInt::ZERO {
+        return BigInt::ZERO;
+    }
     let (mut num, denom) = cancell_common_pow_twos(num, denom);
     let mut digits = Vec::<u64>::with_capacity(num.digits.len() - denom.digits.len() + 1);
     let mut num_digits = &mut num.digits[..];
@@ -546,6 +549,44 @@ impl<'a, 'b> Mul<&'b BigInt> for &'a BigInt {
             schoolbook_mul(self, other)
         }
     }
+}
+
+// toom_3_shuffle applies the inverse of the matrix:
+//  1  0  0  0  0
+//  1  1  1  1  1
+//  1 -1  1 -1  1
+//  1  2  4  8 16
+//  0  0  0  0  1
+fn toom_3_shuffle(rs: [BigInt; 5]) -> [BigInt; 5] {
+    let [r1, mut r2, mut r3, mut r4, r5] = rs;
+    /*
+    let r1 = &x0 * &y0; // 0
+    let mut r2 = &(&x0 + &x1 + &x2) * &(&y0 + &y1 + &y2); // 1
+    let mut r3 = &(&x0 - &x1 + &x2) * &(&y0 - &y1 + &y2); // -1
+    let mut r4 = &(&x0 + &BigInt::from_u64(2) * &x1 + &BigInt::from_u64(4) * &x2)
+        * &(&y0 + &BigInt::from_u64(2) * &y1 + &BigInt::from_u64(4) * &y2); // 2
+    let mut r5 = &x2 * &y2; // inf
+    */
+    r2 -= &r1;
+    r3 -= &r1;
+    r4 -= &r1;
+    std::mem::swap(&mut r2, &mut r4);
+    let r2_div2 = div_exact(&r2, &BigInt::from_u64(2));
+    r3 += &r2_div2;
+    r4 -= r2_div2;
+    let r3_div3 = div_exact(&r3, &BigInt::from_u64(3));
+    r4 += &r3_div3;
+    dbg!(&r1, &r2, &r3, &r4, &r5); // GOOD!
+    r4 += &BigInt::from_u64(4) * &r5;
+    r3 -= &BigInt::from_u64(9) * &r5;
+    r2 -= &BigInt::from_u64(16) * &r5;
+    r4 = -div_exact(&r4, &BigInt::from_u64(2));
+    r3 -= &BigInt::from_u64(3) * &r4;
+    r2 -= &BigInt::from_u64(8) * &r4;
+    r3 = div_exact(&r3, &BigInt::from_u64(3));
+    r2 -= &BigInt::from_u64(4) * &r3;
+    r2 = div_exact(&r2, &BigInt::from_u64(2));
+    [r1, r2, r3, r4, r5]
 }
 #[cfg(test)]
 mod tests {
@@ -823,6 +864,45 @@ mod tests {
         assert_eq!(tmp, [4, 0, 0, 0]);
         assert_eq!(iter.next(), None);
     }
+    #[test]
+    fn test_toom_3_shuffle() {
+        fn one() -> BigInt {
+            BigInt::from_u64(1)
+        }
+        fn id(n: usize) -> [BigInt; 5] {
+            let mut out = [BigInt::ZERO; 5];
+            out[n] = one();
+            out
+        }
+        let col0 = [one(), one(), one(), one(), BigInt::ZERO];
+        assert_eq!(toom_3_shuffle(col0), id(0));
+        let col1 = [
+            BigInt::ZERO,
+            one(),
+            -one(),
+            BigInt::from_u64(2),
+            BigInt::ZERO,
+        ];
+        assert_eq!(toom_3_shuffle(col1), id(1));
+        let col2 = [
+            BigInt::ZERO,
+            one(),
+            one(),
+            BigInt::from_u64(4),
+            BigInt::ZERO,
+        ];
+        assert_eq!(toom_3_shuffle(col2), id(2));
+        let col3 = [
+            BigInt::ZERO,
+            one(),
+            -one(),
+            BigInt::from_u64(8),
+            BigInt::ZERO,
+        ];
+        assert_eq!(toom_3_shuffle(col3), id(3));
+        let col4 = [BigInt::ZERO, one(), one(), BigInt::from_u64(16), one()];
+        assert_eq!(toom_3_shuffle(col4), id(4));
+    }
     fn any_odd() -> impl Strategy<Value = u64> {
         any::<u64>().prop_map(|x| (x << 1) + 1)
     }
@@ -902,5 +982,21 @@ mod tests {
                 *y = inv_u64(x);
             }
         });
+    }
+    #[bench]
+    fn bench_div_exact(bench: &mut Bencher) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let a = random_bigint(&mut rng, 1000);
+        let b = random_bigint(&mut rng, 1000);
+        let prod = &a * &b;
+        bench.iter(|| div_exact(&prod, &a));
+    }
+    #[bench]
+    fn bench_div_six(bench: &mut Bencher) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let a = random_bigint(&mut rng, 1000);
+        let six = BigInt::from_u64(6);
+        let prod = &a * &six;
+        bench.iter(|| div_exact(&prod, &six));
     }
 }
