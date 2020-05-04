@@ -79,6 +79,13 @@ impl BigInt {
             self.negative = !self.negative;
         }
     }
+    fn from_u64(x: u64) -> Self {
+        BigInt {
+            digits: vec![x],
+            negative: false,
+        }
+        .normalize()
+    }
 }
 
 fn mul_u64(x: u64, y: u64) -> (u64, u64) {
@@ -255,6 +262,87 @@ impl<'a> Iterator for AllVectors<'a> {
     }
 }
 
+pub fn shift_combined(a: u64, b: u64, shift: u32) -> u64 {
+    let combined = a as u128 + ((b as u128) << 64);
+    (combined >> shift) as u64
+}
+
+fn shifted_digits(digits: &[u64], shift: u32) -> Vec<u64> {
+    if shift == 0 {
+        return digits.to_vec();
+    }
+    match digits.last() {
+        None => Vec::new(),
+        Some(&last) => digits
+            .windows(2)
+            .map(|window| shift_combined(window[0], window[1], shift))
+            .chain(std::iter::once(last >> shift))
+            .collect(),
+    }
+}
+
+fn cancell_common_pow_twos(a: &BigInt, b: &BigInt) -> (BigInt, BigInt) {
+    if *a == BigInt::ZERO || *b == BigInt::ZERO {
+        return (a.clone(), b.clone());
+    }
+    let mut a_digits = &a.digits[..];
+    let mut b_digits = &b.digits[..];
+    // Strip low zeros
+    while let (Some((0, new_a_digits)), Some((0, new_b_digits))) =
+        (a_digits.split_first(), b_digits.split_first())
+    {
+        a_digits = new_a_digits;
+        b_digits = new_b_digits;
+    }
+    let bitshift = std::cmp::min(a_digits[0].trailing_zeros(), b_digits[0].trailing_zeros());
+    let a = BigInt {
+        negative: a.negative,
+        digits: shifted_digits(a_digits, bitshift),
+    }
+    .normalize();
+    let b = BigInt {
+        negative: b.negative,
+        digits: shifted_digits(b_digits, bitshift),
+    }
+    .normalize();
+    (a, b)
+}
+
+fn inv_u64(x: u64) -> u64 {
+    if x % 2 == 0 {
+        panic!("Attempted to call inv_u64 on even number");
+    }
+    // We want to compute x^(phi(2^64) - 1), where phi(2^64) is the size of the multiplicative
+    // group. We know that x^(phi(2^64)) is 1, because the group is of order phi(2^64). We also
+    // know phi(2^64): it's simply the number of odd u64s, which is 2^63.
+    let mut y = 1u64;
+    let mut x_exp_pow_2 = x;
+    for _ in 0..63 {
+        y = y.wrapping_mul(x_exp_pow_2);
+        x_exp_pow_2 = x_exp_pow_2.wrapping_mul(x_exp_pow_2);
+    }
+    y
+}
+
+pub fn div_exact(num: &BigInt, denom: &BigInt) -> BigInt {
+    if *denom == BigInt::ZERO {
+        panic!("div_dexact by 0")
+    }
+    let (mut num, denom) = cancell_common_pow_twos(num, denom);
+    let mut digits = Vec::<u64>::with_capacity(num.digits.len() - denom.digits.len() + 1);
+    let mut num_digits = &mut num.digits[..];
+    let leading_denom_inv = inv_u64(denom.digits[0]);
+    while let Some(leading) = num_digits.first() {
+        let next_digit = leading_denom_inv.wrapping_mul(*leading);
+        digits.push(next_digit);
+        let prod = &BigInt::from_u64(next_digit) * &denom;
+        sub_assign_digits(num_digits, &prod.digits);
+        num_digits = &mut num_digits[1..];
+    }
+    let negative = num.negative ^ denom.negative;
+    BigInt { negative, digits }.normalize()
+}
+
 impl Neg for BigInt {
     type Output = Self;
 
@@ -422,7 +510,7 @@ fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
 }
 
 // Precondition: target >= other
-fn sub_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
+fn sub_assign_digits(target: &mut [u64], other: &[u64]) {
     let mut borrow = false;
     for (target_digit, &other_digit) in target.iter_mut().zip(other.iter()) {
         let (res, borrow1) = target_digit.overflowing_sub(borrow as u64);
@@ -692,6 +780,18 @@ mod tests {
             assert_eq!(expected, actual);
         }
     }
+    proptest! {
+        #[test]
+        fn test_div_exact(a in any_bigint(0..20),b in any_bigint(0..20)) {
+            prop_assume!(a != BigInt::ZERO);
+            prop_assume!(b != BigInt::ZERO);
+            let prod = schoolbook_mul(&a, &b);
+            let a_from_div = div_exact(&prod, &b);
+            let b_from_div = div_exact(&prod, &a);
+            assert_eq!(a, a_from_div);
+            assert_eq!(b, b_from_div);
+        }
+    }
     fn random_bigint(rng: &mut rand_chacha::ChaCha8Rng, size: usize) -> BigInt {
         let mut digits = vec![0; size];
         for x in digits.iter_mut() {
@@ -723,11 +823,21 @@ mod tests {
         assert_eq!(tmp, [4, 0, 0, 0]);
         assert_eq!(iter.next(), None);
     }
+    fn any_odd() -> impl Strategy<Value = u64> {
+        any::<u64>().prop_map(|x| (x << 1) + 1)
+    }
     #[test]
     fn test_all_vectors_empty() {
         let arr = [];
         let mut iter = all_vectors(&arr);
         assert_eq!(iter.next(), None);
+    }
+    proptest! {
+        #[test]
+        fn test_inv_u64(x in any_odd()) {
+            let y = inv_u64(x);
+            assert_eq!(1, x.wrapping_mul(y));
+        }
     }
     proptest! {
         #[test]
@@ -778,5 +888,19 @@ mod tests {
         let mut a = random_bigint(&mut rng, 1000);
         let b = random_bigint(&mut rng, 1000);
         bench.iter(|| a += &b);
+    }
+    #[bench]
+    fn bench_inv_u64(bench: &mut Bencher) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let mut test_nums = vec![0; 100];
+        let mut out = test_nums.clone();
+        for x in test_nums.iter_mut() {
+            *x = (rng.gen::<u64>() << 1) + 1;
+        }
+        bench.iter(|| {
+            for (&x, y) in test_nums.iter().zip(out.iter_mut()) {
+                *y = inv_u64(x);
+            }
+        });
     }
 }
