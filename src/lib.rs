@@ -10,6 +10,7 @@ use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 const KARABTSUBA_THRESHOLD: usize = 60;
+const TOOM_3_THRESHOLD: usize = 3000;
 
 #[derive(PartialEq, Eq, Clone)]
 pub struct BigInt {
@@ -146,35 +147,36 @@ pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
     BigInt { digits, negative }.normalize()
 }
 
-fn split_digits_zero_padded(digits: &[u64], split: usize) -> (BigInt, BigInt) {
-    if digits.len() < split {
-        let l = BigInt {
+fn split_digits_2(digits: &[u64], split: usize) -> [BigInt; 2] {
+    let mut iter = split_digits(digits, split);
+    [iter.next().unwrap(), iter.next().unwrap()]
+}
+fn split_digits_3(digits: &[u64], split: usize) -> [BigInt; 3] {
+    let mut iter = split_digits(digits, split);
+    [
+        iter.next().unwrap(),
+        iter.next().unwrap(),
+        iter.next().unwrap(),
+    ]
+}
+fn split_digits<'a>(digits: &'a [u64], chunk_size: usize) -> impl Iterator<Item = BigInt> + 'a {
+    digits
+        .chunks(chunk_size)
+        .map(|digits| BigInt {
             digits: digits.to_vec(),
             negative: false,
-        };
-        let r = BigInt::ZERO;
-        (l, r)
-    } else {
-        let (l, r) = digits.split_at(split);
-        let l = BigInt {
-            digits: l.to_vec(),
-            negative: false,
-        }
-        .normalize();
-        let r = BigInt {
-            digits: r.to_vec(),
-            negative: false,
-        }
-        .normalize();
-        (l, r)
-    }
+        })
+        .chain(std::iter::repeat(BigInt::ZERO))
 }
 
 pub fn karatsuba_mul(l: &BigInt, r: &BigInt) -> BigInt {
+    if *l == BigInt::ZERO || *r == BigInt::ZERO {
+        return BigInt::ZERO;
+    }
     let split_len = (std::cmp::max(l.digits.len(), r.digits.len()) + 1) / 2;
     let mut digits = vec![0; l.digits.len() + r.digits.len() + 1];
-    let (l0, l1) = split_digits_zero_padded(&l.digits, split_len);
-    let (r0, r1) = split_digits_zero_padded(&r.digits, split_len);
+    let [l0, l1] = split_digits_2(&l.digits, split_len);
+    let [r0, r1] = split_digits_2(&r.digits, split_len);
     let prod0 = &l0 * &r0;
     let prod2 = &l1 * &r1;
     let prod1 = &(l0 + l1) * &(r0 + r1) - &prod2 - &prod0;
@@ -543,7 +545,9 @@ impl<'a, 'b> Mul<&'b BigInt> for &'a BigInt {
 
     fn mul(self, other: &'b BigInt) -> BigInt {
         let min_len = std::cmp::min(self.digits.len(), other.digits.len());
-        if min_len > KARABTSUBA_THRESHOLD {
+        if min_len > TOOM_3_THRESHOLD {
+            toom_3(self, other)
+        } else if min_len > KARABTSUBA_THRESHOLD {
             karatsuba_mul(self, other)
         } else {
             schoolbook_mul(self, other)
@@ -559,14 +563,6 @@ impl<'a, 'b> Mul<&'b BigInt> for &'a BigInt {
 //  0  0  0  0  1
 fn toom_3_shuffle(rs: [BigInt; 5]) -> [BigInt; 5] {
     let [r1, mut r2, mut r3, mut r4, r5] = rs;
-    /*
-    let r1 = &x0 * &y0; // 0
-    let mut r2 = &(&x0 + &x1 + &x2) * &(&y0 + &y1 + &y2); // 1
-    let mut r3 = &(&x0 - &x1 + &x2) * &(&y0 - &y1 + &y2); // -1
-    let mut r4 = &(&x0 + &BigInt::from_u64(2) * &x1 + &BigInt::from_u64(4) * &x2)
-        * &(&y0 + &BigInt::from_u64(2) * &y1 + &BigInt::from_u64(4) * &y2); // 2
-    let mut r5 = &x2 * &y2; // inf
-    */
     // dbg!(&r1, &r2, &r3, &r4, &r5);
     r2 -= &r1;
     r3 -= &r1;
@@ -581,12 +577,38 @@ fn toom_3_shuffle(rs: [BigInt; 5]) -> [BigInt; 5] {
     r3 -= &r4;
     r3 -= &r5;
 
+    r2 -= &BigInt::from_u64(2) * &r3;
     r2 -= &BigInt::from_u64(4) * &r4;
     r4 -= &BigInt::from_u64(2) * &r5;
-    r2 -= &BigInt::from_u64(2) * &r3;
 
     [r1, r2, r3, r4, r5]
 }
+
+pub fn toom_3(x: &BigInt, y: &BigInt) -> BigInt {
+    if *x == BigInt::ZERO || *y == BigInt::ZERO {
+        return BigInt::ZERO;
+    }
+    let split_len = (std::cmp::max(x.digits.len(), y.digits.len()) + 2) / 3;
+    let mut digits = vec![0; x.digits.len() + y.digits.len() + 1];
+    let [x0, x1, x2] = split_digits_3(&x.digits, split_len);
+    let [y0, y1, y2] = split_digits_3(&y.digits, split_len);
+    let r1 = &x0 * &y0; // 0
+    let r2 = &(&x0 + &x1 + &x2) * &(&y0 + &y1 + &y2); // 1
+    let r3 = &(&x0 - &x1 + &x2) * &(&y0 - &y1 + &y2); // -1
+    let r4 = &(&x0 + &BigInt::from_u64(2) * &x1 + &BigInt::from_u64(4) * &x2)
+        * &(&y0 + &BigInt::from_u64(2) * &y1 + &BigInt::from_u64(4) * &y2); // 2
+    let r5 = &x2 * &y2; // inf
+    let ps = toom_3_shuffle([r1, r2, r3, r4, r5]);
+    for (i, p) in ps.iter().enumerate() {
+        // Slice may be invalid if we multiply a small number by a big one
+        if *p != BigInt::ZERO {
+            add_assign_digits_slice(&mut digits[i * split_len..], &p.digits);
+        }
+    }
+    let negative = x.negative ^ y.negative;
+    BigInt { digits, negative }.normalize()
+}
+
 #[cfg(test)]
 mod tests {
     extern crate cpuprofiler;
@@ -802,6 +824,14 @@ mod tests {
             assert_eq!(expected, actual);
         }
     }
+    proptest! {
+        #[test]
+        fn test_toom_3(a in any_bigint(0..20),b in any_bigint(0..20)) {
+            let expected = schoolbook_mul(&a, &b);
+            let actual = toom_3(&a, &b);
+            assert_eq!(expected, actual);
+        }
+    }
     #[test]
     fn test_karabtsuba_hardcoded() {
         let operands = vec![(
@@ -817,6 +847,24 @@ mod tests {
         for (a, b) in operands {
             let expected = schoolbook_mul(&a, &b);
             let actual = karatsuba_mul(&a, &b);
+            assert_eq!(expected, actual);
+        }
+    }
+    #[test]
+    fn test_toom_3_hardcoded() {
+        let operands = vec![(
+            BigInt {
+                digits: vec![0, 0, 0, 1],
+                negative: false,
+            },
+            BigInt {
+                digits: vec![1],
+                negative: false,
+            },
+        )];
+        for (a, b) in operands {
+            let expected = schoolbook_mul(&a, &b);
+            let actual = toom_3(&a, &b);
             assert_eq!(expected, actual);
         }
     }
@@ -936,14 +984,14 @@ mod tests {
     }
     #[bench]
     fn bench_schoolbook_mul(bench: &mut Bencher) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let a = random_bigint(&mut rng, 1000);
+        let b = random_bigint(&mut rng, 1000);
         PROFILER
             .lock()
             .unwrap()
             .start(format!("profiling/schoolbook_mul.profile"))
             .unwrap();
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
-        let a = random_bigint(&mut rng, 1000);
-        let b = random_bigint(&mut rng, 1000);
         bench.iter(|| schoolbook_mul(&a, &b));
         PROFILER.lock().unwrap().stop().unwrap();
     }
@@ -952,7 +1000,13 @@ mod tests {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
         let a = random_bigint(&mut rng, 1000);
         let b = random_bigint(&mut rng, 1000);
+        PROFILER
+            .lock()
+            .unwrap()
+            .start(format!("profiling/schoolbook_mul_vec.profile"))
+            .unwrap();
         bench.iter(|| schoolbook_mul_vec(&a, &b));
+        PROFILER.lock().unwrap().stop().unwrap();
     }
     #[bench]
     fn bench_karabtsuba_mul(bench: &mut Bencher) {
@@ -960,6 +1014,32 @@ mod tests {
         let a = random_bigint(&mut rng, 1000);
         let b = random_bigint(&mut rng, 1000);
         bench.iter(|| karatsuba_mul(&a, &b));
+    }
+    #[bench]
+    fn bench_karabtsuba_mul_10k(bench: &mut Bencher) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let a = random_bigint(&mut rng, 10000);
+        let b = random_bigint(&mut rng, 10000);
+        PROFILER
+            .lock()
+            .unwrap()
+            .start(format!("profiling/karabtsuba.profile"))
+            .unwrap();
+        bench.iter(|| karatsuba_mul(&a, &b));
+        PROFILER.lock().unwrap().stop().unwrap();
+    }
+    #[bench]
+    fn bench_toom_3_10k(bench: &mut Bencher) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let a = random_bigint(&mut rng, 10000);
+        let b = random_bigint(&mut rng, 10000);
+        PROFILER
+            .lock()
+            .unwrap()
+            .start(format!("profiling/toom3.profile"))
+            .unwrap();
+        bench.iter(|| toom_3(&a, &b));
+        PROFILER.lock().unwrap().stop().unwrap();
     }
     #[bench]
     fn bench_add_assign(bench: &mut Bencher) {
