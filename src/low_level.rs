@@ -1,4 +1,5 @@
 use crate::BigInt;
+use std::ops::Mul;
 
 pub fn add_to_digits(x: u64, digits: &mut [u64]) {
     let (res, overflow) = digits[0].overflowing_add(x);
@@ -37,19 +38,43 @@ pub fn add_u128_to_digits_with_carry(x: u128, digit0: &mut u64, digit1: &mut u64
 pub fn add_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
     let target_len = std::cmp::max(target.len(), other.len()) + 1;
     target.resize(target_len, 0);
-    add_assign_digits_slice(&mut *target, other);
+    add_assign_digits_slice(&mut *target, other.iter().copied());
 }
 
-pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
+pub fn add_assign_digits_slice<I: Iterator<Item = u64>>(target: &mut [u64], other: I) {
     let mut carry = false;
-    for (target_digit, &other_digit) in target.iter_mut().zip(other.iter()) {
+    let mut len = 0;
+    for (target_digit, other_digit) in target.iter_mut().zip(other) {
+        len += 1;
         let (res, carry1) = target_digit.overflowing_add(carry as u64);
         let (res, carry2) = res.overflowing_add(other_digit);
         *target_digit = res;
         carry = carry1 || carry2;
     }
     if carry {
-        add_to_digits(1, &mut target[other.len()..]);
+        add_to_digits(1, &mut target[len..]);
+    }
+}
+
+// shift < 64
+fn shift_combined(a: u64, b: u64, shift: u8) -> u64 {
+    let combined = a as u128 + ((b as u128) << 64);
+    (combined >> shift) as u64
+}
+
+// shift < 64
+pub fn shifted_digits<'a>(digits: &'a [u64], shift: u8) -> Box<dyn Iterator<Item = u64> + 'a> {
+    if shift == 0 {
+        return Box::new(digits.iter().copied());
+    }
+    match digits.last() {
+        None => Box::new(std::iter::empty()),
+        Some(&last) => Box::new(
+            digits
+                .windows(2)
+                .map(move |window| shift_combined(window[0], window[1], shift))
+                .chain(std::iter::once(last >> shift)),
+        ),
     }
 }
 
@@ -102,4 +127,30 @@ pub fn split_digits_iter<'a>(
             negative: false,
         })
         .chain(std::iter::repeat(BigInt::ZERO))
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct BitShift {
+    pub bits: u8,
+    pub digits: usize,
+}
+
+impl Mul<usize> for BitShift {
+    type Output = BitShift;
+
+    fn mul(self, factor: usize) -> BitShift {
+        let bits_unwrapped = self.bits as usize * factor;
+        let bits = (bits_unwrapped % 64) as u8;
+        let digits =
+            self.digits.checked_mul(factor).expect("digits overflowed") + bits_unwrapped / 64;
+        BitShift { bits, digits }
+    }
+}
+
+impl BitShift {
+    pub fn from_usize(shift: usize) -> Self {
+        let bits = (shift % 64) as u8;
+        let digits = shift / 64;
+        BitShift { bits, digits }
+    }
 }

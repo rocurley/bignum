@@ -1,4 +1,4 @@
-use crate::low_level::sub_assign_digits;
+use crate::low_level::{shifted_digits, sub_assign_digits};
 use crate::BigInt;
 
 pub fn div_exact(num: &BigInt, denom: &BigInt) -> BigInt {
@@ -36,37 +36,18 @@ fn cancell_common_pow_twos(a: &BigInt, b: &BigInt) -> (BigInt, BigInt) {
         a_digits = new_a_digits;
         b_digits = new_b_digits;
     }
-    let bitshift = std::cmp::min(a_digits[0].trailing_zeros(), b_digits[0].trailing_zeros());
+    let bitshift = std::cmp::min(a_digits[0].trailing_zeros(), b_digits[0].trailing_zeros()) as u8;
     let a = BigInt {
         negative: a.negative,
-        digits: shifted_digits(a_digits, bitshift),
+        digits: shifted_digits(a_digits, bitshift).collect(),
     }
     .normalize();
     let b = BigInt {
         negative: b.negative,
-        digits: shifted_digits(b_digits, bitshift),
+        digits: shifted_digits(b_digits, bitshift).collect(),
     }
     .normalize();
     (a, b)
-}
-
-pub fn shift_combined(a: u64, b: u64, shift: u32) -> u64 {
-    let combined = a as u128 + ((b as u128) << 64);
-    (combined >> shift) as u64
-}
-
-fn shifted_digits(digits: &[u64], shift: u32) -> Vec<u64> {
-    if shift == 0 {
-        return digits.to_vec();
-    }
-    match digits.last() {
-        None => Vec::new(),
-        Some(&last) => digits
-            .windows(2)
-            .map(|window| shift_combined(window[0], window[1], shift))
-            .chain(std::iter::once(last >> shift))
-            .collect(),
-    }
 }
 
 pub fn inv_u64(x: u64) -> u64 {

@@ -48,7 +48,7 @@ pub fn toom_3(x: &BigInt, y: &BigInt) -> BigInt {
     for (i, p) in ps.iter().enumerate() {
         // Slice may be invalid if we multiply a small number by a big one
         if *p != BigInt::ZERO {
-            add_assign_digits_slice(&mut digits[i * split_len..], &p.digits);
+            add_assign_digits_slice(&mut digits[i * split_len..], p.digits.iter().copied());
         }
     }
     let negative = x.negative ^ y.negative;

@@ -17,6 +17,7 @@ use toom::toom_3;
 mod low_level;
 mod addsub;
 pub mod div;
+pub mod fourier;
 pub mod karatsuba;
 pub mod schoolbook_mul;
 pub mod schoolbook_mul_vec;

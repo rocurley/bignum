@@ -11,9 +11,9 @@ pub fn karatsuba_mul(l: &BigInt, r: &BigInt) -> BigInt {
     let prod0 = &l0 * &r0;
     let prod2 = &l1 * &r1;
     let prod1 = &(l0 + l1) * &(r0 + r1) - &prod2 - &prod0;
-    add_assign_digits_slice(&mut digits, &prod0.digits);
-    add_assign_digits_slice(&mut digits[split_len..], &prod1.digits);
-    add_assign_digits_slice(&mut digits[2 * split_len..], &prod2.digits);
+    add_assign_digits_slice(&mut digits, prod0.digits.iter().copied());
+    add_assign_digits_slice(&mut digits[split_len..], prod1.digits.iter().copied());
+    add_assign_digits_slice(&mut digits[2 * split_len..], prod2.digits.iter().copied());
     let negative = l.negative ^ r.negative;
     BigInt { digits, negative }.normalize()
 }
