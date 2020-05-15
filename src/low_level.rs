@@ -1,6 +1,7 @@
 use crate::BigInt;
 use std::cmp::Ordering;
-use std::ops::Mul;
+use std::iter::repeat;
+use std::ops::{Mul, Shr};
 
 pub fn add_to_digits(x: u64, digits: &mut [u64]) {
     let (res, overflow) = digits[0].overflowing_add(x);
@@ -80,6 +81,7 @@ pub fn shifted_digits<'a>(digits: &'a [u64], shift: u8) -> Box<dyn Iterator<Item
 }
 
 // Precondition: target >= other
+// target = target - other
 pub fn sub_assign_digits<I: Iterator<Item = u64>>(target: &mut [u64], other: I) {
     let mut borrow = false;
     let mut len = 0;
@@ -95,6 +97,7 @@ pub fn sub_assign_digits<I: Iterator<Item = u64>>(target: &mut [u64], other: I) 
     }
 }
 // Precondition: target <= other
+// target = other - target
 pub fn sub_assign_digits_reverse(target: &mut Vec<u64>, other: &[u64]) {
     target.resize(other.len(), 0);
     sub_assign_digits_reverse_slice(target, other.iter().copied());
@@ -182,5 +185,19 @@ impl BitShift {
         let bits = (shift % 64) as u8;
         let digits = shift / 64;
         BitShift { bits, digits }
+    }
+}
+
+impl Shr<BitShift> for &BigInt {
+    type Output = BigInt;
+    fn shr(self, shift: BitShift) -> BigInt {
+        let digits = repeat(0)
+            .take(shift.digits)
+            .chain(shifted_digits(&self.digits, shift.bits))
+            .collect();
+        BigInt {
+            digits,
+            negative: self.negative,
+        }
     }
 }
