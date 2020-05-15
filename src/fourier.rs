@@ -57,7 +57,7 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: BigInt) 
 // This function will apply:
 // acc += g^pow * x mod B
 // preserving 0 <= acc < B
-fn addFourierTerm(acc: &mut BigInt, x: &BigInt, pow: usize, order: usize, mod_exp: usize) {
+fn add_fourier_term(acc: &mut BigInt, x: &BigInt, pow: usize, order: usize, mod_exp: usize) {
     let prim_root_exp = 2 * 64 * mod_exp / order; // g = 2^prim_root_exp
     let root_pow_exp = prim_root_exp * (pow % order); // g^pow = 2^root_pow_exp
 
@@ -66,8 +66,8 @@ fn addFourierTerm(acc: &mut BigInt, x: &BigInt, pow: usize, order: usize, mod_ex
     // x = x0 + x1 (B-1) + x2 (B-1)^2 + x3 (B-1)^3
     // x = x0 - x1 + x2 - x3
     // Only one of these will be populated at all, so it will be +- a power of two.
-    let shift_bits = pow % (64 * mod_exp);
-    let negative = ((pow / (64 * mod_exp)) % 2) != 0;
+    let shift_bits = root_pow_exp % (64 * mod_exp);
+    let negative = ((root_pow_exp / (64 * mod_exp)) % 2) != 0;
     // g^pow = +/- 2^shift_bits
     // where +/- is determined by negative
     let shift = BitShift::from_usize(shift_bits);
@@ -105,5 +105,74 @@ fn succ_mod(x: &BigInt, mod_blocks: usize) -> BigInt {
         diff + pow_succ(mod_blocks)
     } else {
         diff
+    }
+}
+
+fn horrible_mod(mut x: BigInt, y: &BigInt) -> BigInt {
+    let mut gas = 10;
+    let mut dec_gas = || {
+        gas -= 1;
+        if gas == 0 {
+            panic!("Out of gas")
+        }
+    };
+    if *y == BigInt::ZERO {
+        panic!("Mod by 0")
+    }
+    if x < BigInt::ZERO {
+        let mut shifted = -y.clone();
+        while x < shifted {
+            dbg!(&x, &shifted);
+            shifted = &shifted >> BitShift::from_usize(1);
+        }
+        dbg!(&x, &shifted);
+        x -= shifted;
+    }
+    while x >= *y {
+        let mut shifted = y >> BitShift::from_usize(1);
+        let mut prior = y.clone();
+        while x >= shifted {
+            dec_gas();
+            dbg!(&x, &prior, &shifted);
+            std::mem::swap(&mut shifted, &mut prior);
+            shifted = &shifted >> BitShift::from_usize(2);
+        }
+        dbg!(&x, &prior);
+        x -= prior;
+    }
+    x
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::div::div_exact;
+    use crate::schoolbook_mul;
+    use crate::test_utils::*;
+    use proptest::prelude::*;
+    proptest! {
+        #[test]
+        fn test_horrible_mod_small(a in any::<u64>(), b in (1..u64::MAX)) {
+            let expected = BigInt::from_u64(a % b);
+            let actual = horrible_mod(BigInt::from_u64(a), &BigInt::from_u64(b));
+            assert_eq!(expected, actual);
+        }
+    }
+    proptest! {
+        #[test]
+        fn test_horrible_mod(a in any_bigint(0..5), b in any_bigint(0..2)) {
+            let m = horrible_mod(a.clone(), &b);
+            let r = div_exact(&(&a - &m), &b);
+            let a_reconstructed = (&r * &a) + m;
+            assert_eq!(a_reconstructed, a);
+        }
+    }
+    proptest! {
+        #[test]
+        fn test_succ_mod(a in any_bigint(0..20)) {
+            let mod_blocks = (a.digits.len() + 1)/2;
+            let mod_base = pow_succ(mod_blocks);
+            assert_eq!(succ_mod(&a, mod_blocks), horrible_mod(a, &mod_base));
+        }
     }
 }

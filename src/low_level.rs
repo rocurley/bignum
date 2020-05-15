@@ -59,13 +59,13 @@ pub fn add_assign_digits_slice<I: Iterator<Item = u64>>(target: &mut [u64], othe
 }
 
 // shift < 64
-fn shift_combined(a: u64, b: u64, shift: u8) -> u64 {
+fn shr_combined(a: u64, b: u64, shift: u8) -> u64 {
     let combined = a as u128 + ((b as u128) << 64);
     (combined >> shift) as u64
 }
 
 // shift < 64
-pub fn shifted_digits<'a>(digits: &'a [u64], shift: u8) -> Box<dyn Iterator<Item = u64> + 'a> {
+pub fn shr_digits<'a>(digits: &'a [u64], shift: u8) -> Box<dyn Iterator<Item = u64> + 'a> {
     if shift == 0 {
         return Box::new(digits.iter().copied());
     }
@@ -188,7 +188,7 @@ impl BitShift {
     }
 }
 
-impl Shr<BitShift> for &BigInt {
+impl Shl<BitShift> for &BigInt {
     type Output = BigInt;
     fn shr(self, shift: BitShift) -> BigInt {
         let digits = repeat(0)

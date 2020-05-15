@@ -60,7 +60,7 @@ impl AddAssign for BigInt {
                 // We could instead use sub_assign_digits_reverse, but this avoids allocating.
                 Ordering::Less => std::mem::swap(self, &mut other),
             }
-            sub_assign_digits(&mut self.digits, &other.digits)
+            sub_assign_digits(&mut self.digits, other.digits.iter().copied())
         }
         self.normalize_in_place();
     }
@@ -72,7 +72,9 @@ impl<'a> AddAssign<&'a BigInt> for BigInt {
             add_assign_digits(&mut self.digits, &other.digits);
         } else {
             match self.cmp_abs(&other) {
-                Ordering::Greater => sub_assign_digits(&mut self.digits, &other.digits),
+                Ordering::Greater => {
+                    sub_assign_digits(&mut self.digits, other.digits.iter().copied())
+                }
                 Ordering::Equal => {
                     *self = BigInt::ZERO;
                     return;

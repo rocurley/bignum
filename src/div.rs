@@ -16,7 +16,7 @@ pub fn div_exact(num: &BigInt, denom: &BigInt) -> BigInt {
         let next_digit = leading_denom_inv.wrapping_mul(*leading);
         digits.push(next_digit);
         let prod = &BigInt::from_u64(next_digit) * &denom;
-        sub_assign_digits(num_digits, &prod.digits);
+        sub_assign_digits(num_digits, prod.digits.iter().copied());
         num_digits = &mut num_digits[1..];
     }
     let negative = num.negative ^ denom.negative;
