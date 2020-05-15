@@ -1,4 +1,5 @@
 use crate::BigInt;
+use std::cmp::Ordering;
 use std::ops::Mul;
 
 pub fn add_to_digits(x: u64, digits: &mut [u64]) {
@@ -79,23 +80,29 @@ pub fn shifted_digits<'a>(digits: &'a [u64], shift: u8) -> Box<dyn Iterator<Item
 }
 
 // Precondition: target >= other
-pub fn sub_assign_digits(target: &mut [u64], other: &[u64]) {
+pub fn sub_assign_digits<I: Iterator<Item = u64>>(target: &mut [u64], other: I) {
     let mut borrow = false;
-    for (target_digit, &other_digit) in target.iter_mut().zip(other.iter()) {
+    let mut len = 0;
+    for (target_digit, other_digit) in target.iter_mut().zip(other) {
+        len += 1;
         let (res, borrow1) = target_digit.overflowing_sub(borrow as u64);
         let (res, borrow2) = res.overflowing_sub(other_digit);
         *target_digit = res;
         borrow = borrow1 || borrow2;
     }
     if borrow {
-        sub_from_digits(1, &mut target[other.len()..]);
+        sub_from_digits(1, &mut target[len..]);
     }
 }
 // Precondition: target <= other
 pub fn sub_assign_digits_reverse(target: &mut Vec<u64>, other: &[u64]) {
     target.resize(other.len(), 0);
+    sub_assign_digits_reverse_slice(target, other.iter().copied());
+}
+// Precondition: target <= other
+pub fn sub_assign_digits_reverse_slice<I: Iterator<Item = u64>>(target: &mut [u64], other: I) {
     let mut borrow = false;
-    for (target_digit, &other_digit) in target.iter_mut().zip(other.iter()) {
+    for (target_digit, other_digit) in target.iter_mut().zip(other) {
         let (res, borrow1) = other_digit.overflowing_sub(borrow as u64);
         let (res, borrow2) = res.overflowing_sub(*target_digit);
         *target_digit = res;
@@ -127,6 +134,29 @@ pub fn split_digits_iter<'a>(
             negative: false,
         })
         .chain(std::iter::repeat(BigInt::ZERO))
+}
+
+pub fn trim_digits_slice(mut slice: &[u64]) -> &[u64] {
+    while let Some((&0, init)) = slice.split_last() {
+        slice = init;
+    }
+    slice
+}
+
+pub fn cmp_digits_slice(mut x: &[u64], mut y: &[u64]) -> Ordering {
+    x = trim_digits_slice(x);
+    y = trim_digits_slice(y);
+    let len_cmp = x.len().cmp(&y.len());
+    if len_cmp != Ordering::Equal {
+        return len_cmp;
+    }
+    for (s, o) in x.iter().rev().zip(y.iter().rev()) {
+        let digit_cmp = s.cmp(o);
+        if digit_cmp != Ordering::Equal {
+            return digit_cmp;
+        }
+    }
+    Ordering::Equal
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
