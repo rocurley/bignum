@@ -255,7 +255,6 @@ mod tests {
     use proptest::prelude::*;
     fn check_shift_left_right_digits(a: BigInt, shift: u8) {
         let shifted_digits: Vec<u64> = shl_digits(&a.digits, shift).collect();
-        dbg!(&shifted_digits);
         let unshifted_digits: Vec<u64> = shr_digits(&shifted_digits, shift).collect();
         let unshifted = BigInt {
             digits: unshifted_digits,

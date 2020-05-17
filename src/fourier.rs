@@ -93,6 +93,9 @@ fn pow_succ(n: usize) -> BigInt {
 
 // Computes x mod (2^(64 mod_blocks) + 1)
 fn succ_mod(x: &BigInt, mod_blocks: usize) -> BigInt {
+    if mod_blocks == 0 {
+        return BigInt::ZERO;
+    }
     // B = 2^N + 1
     // x0 + x1 (B-1)
     // x0 - x1 + x1 B
@@ -109,35 +112,19 @@ fn succ_mod(x: &BigInt, mod_blocks: usize) -> BigInt {
 }
 
 fn horrible_mod(mut x: BigInt, y: &BigInt) -> BigInt {
-    let mut gas = 10;
-    let mut dec_gas = || {
-        gas -= 1;
-        if gas == 0 {
-            panic!("Out of gas")
-        }
-    };
-    if *y == BigInt::ZERO {
-        panic!("Mod by 0")
+    if *y <= BigInt::ZERO {
+        panic!("Mod by non-positive number")
     }
     if x < BigInt::ZERO {
-        let mut shifted = -y.clone();
-        while x < shifted {
-            dbg!(&x, &shifted);
-            shifted = &shifted << BitShift::from_usize(1);
-        }
-        dbg!(&x, &shifted);
-        x -= shifted;
+        panic!("Mod of negative number")
     }
     while x >= *y {
         let mut shifted = y << BitShift::from_usize(1);
         let mut prior = y.clone();
         while x >= shifted {
-            dec_gas();
-            dbg!(&x, &prior, &shifted);
             std::mem::swap(&mut shifted, &mut prior);
             shifted = &shifted << BitShift::from_usize(2);
         }
-        dbg!(&x, &prior);
         x -= prior;
     }
     x
@@ -160,16 +147,17 @@ mod tests {
     }
     proptest! {
         #[test]
-        fn test_horrible_mod(a in any_bigint(0..5), b in any_bigint(0..2)) {
+        fn test_horrible_mod(mut a in nonnegative_bigint(0..5), mut b in positive_bigint(0..3)) {
             let m = horrible_mod(a.clone(), &b);
             let r = div_exact(&(&a - &m), &b);
-            let a_reconstructed = (&r * &a) + m;
+            dbg!(&r, &m);
+            let a_reconstructed = (&r * &b) + m;
             assert_eq!(a_reconstructed, a);
         }
     }
     proptest! {
         #[test]
-        fn test_succ_mod(a in any_bigint(0..20)) {
+        fn test_succ_mod(a in nonnegative_bigint(0..5)) {
             let mod_blocks = (a.digits.len() + 1)/2;
             let mod_base = pow_succ(mod_blocks);
             assert_eq!(succ_mod(&a, mod_blocks), horrible_mod(a, &mod_base));
