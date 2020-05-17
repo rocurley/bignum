@@ -1,4 +1,4 @@
-use crate::low_level::{add_assign_digits_slice, shifted_digits, split_digits_iter, BitShift};
+use crate::low_level::{add_assign_digits_slice, shl_digits, split_digits_iter, BitShift};
 use crate::BigInt;
 // Not an FFT, just a reference implementation for testing.
 pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: BigInt) -> Vec<BigInt> {
@@ -9,7 +9,7 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: BigInt) 
     // TODO: it's unclear if we can/should guarantee that this is a multiple of 64. Doing so would
     // eliminate the shifts entirely (and the resulting allocations), leaving only a call to
     // add_assign_digits_slice. The allocation could in any case be eliminated by removing the call
-    // to collect in shifted_digits, and having add_assign_digits_slice take an iterator for other.
+    // to collect in shl_digits, and having add_assign_digits_slice take an iterator for other.
     let prim_root_exp = 2 * mod_exp / chunks; // 2N'/(2^k)
     let base_shift = BitShift::from_usize(prim_root_exp);
     (0..chunks)
@@ -34,7 +34,7 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: BigInt) 
                 let negative = (pow / (64 * mod_exp)) % 2;
                 add_assign_digits_slice(
                     &mut digits[shift.digits..],
-                    shifted_digits(&chunk.digits, shift.bits),
+                    shl_digits(&chunk.digits, shift.bits),
                 );
             }
             BigInt {

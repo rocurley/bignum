@@ -1,7 +1,7 @@
 use crate::BigInt;
 use std::cmp::Ordering;
-use std::iter::repeat;
-use std::ops::{Mul, Shr};
+use std::iter::{once, repeat};
+use std::ops::{Mul, Shl, Shr};
 
 pub fn add_to_digits(x: u64, digits: &mut [u64]) {
     let (res, overflow) = digits[0].overflowing_add(x);
@@ -65,6 +65,13 @@ fn shr_combined(a: u64, b: u64, shift: u8) -> u64 {
 }
 
 // shift < 64
+fn shl_combined(a: u64, b: u64, shift: u8) -> u64 {
+    let combined = a as u128 + ((b as u128) << 64);
+    // shift left by shift, but then shift right 64 to take the most significant part
+    (combined >> (64 - shift)) as u64
+}
+
+// shift < 64
 pub fn shr_digits<'a>(digits: &'a [u64], shift: u8) -> Box<dyn Iterator<Item = u64> + 'a> {
     if shift == 0 {
         return Box::new(digits.iter().copied());
@@ -74,8 +81,30 @@ pub fn shr_digits<'a>(digits: &'a [u64], shift: u8) -> Box<dyn Iterator<Item = u
         Some(&last) => Box::new(
             digits
                 .windows(2)
-                .map(move |window| shift_combined(window[0], window[1], shift))
+                .map(move |window| shr_combined(window[0], window[1], shift))
                 .chain(std::iter::once(last >> shift)),
+        ),
+    }
+}
+
+// shift < 64
+pub fn shl_digits<'a>(digits: &'a [u64], shift: u8) -> Box<dyn Iterator<Item = u64> + 'a> {
+    if shift == 0 {
+        return Box::new(digits.iter().copied());
+    }
+    match digits {
+        [] => Box::new(std::iter::empty()),
+        &[digit] => {
+            let combined_shifted = (digit as u128) << shift;
+            Box::new(vec![combined_shifted as u64, (combined_shifted >> 64) as u64].into_iter())
+        }
+        &[first, .., last] => Box::new(
+            once(first << shift).chain(
+                digits
+                    .windows(2)
+                    .map(move |window| shl_combined(window[0], window[1], shift))
+                    .chain(once(last >> (64 - shift))),
+            ),
         ),
     }
 }
@@ -188,16 +217,54 @@ impl BitShift {
     }
 }
 
-impl Shl<BitShift> for &BigInt {
+impl Shr<BitShift> for &BigInt {
     type Output = BigInt;
     fn shr(self, shift: BitShift) -> BigInt {
         let digits = repeat(0)
             .take(shift.digits)
-            .chain(shifted_digits(&self.digits, shift.bits))
+            .chain(shr_digits(&self.digits, shift.bits))
             .collect();
         BigInt {
             digits,
             negative: self.negative,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schoolbook_mul;
+    use crate::test_utils::*;
+    use proptest::prelude::*;
+    fn check_shift_left_right(a: BigInt, shift: u8) {
+        let shifted_digits: Vec<u64> = shl_digits(&a.digits, shift).collect();
+        dbg!(&shifted_digits);
+        let unshifted_digits: Vec<u64> = shr_digits(&shifted_digits, shift).collect();
+        let unshifted = BigInt {
+            digits: unshifted_digits,
+            negative: a.negative,
+        }
+        .normalize();
+        assert_eq!(a, unshifted);
+    }
+    proptest! {
+        #[test]
+        fn test_shift_left_right(a in any_bigint(0..20), shift in (0u8..63)) {
+            check_shift_left_right(a, shift);
+        }
+    }
+    #[test]
+    fn test_shift_left_right_hardcoded() {
+        check_shift_left_right(BigInt::from_u64(2), 63);
+    }
+    proptest! {
+        #[test]
+        fn test_shift_left_muk(a in any_bigint(0..20), shift in (0u8..63)) {
+        let digits: Vec<u64> = shl_digits(&a.digits, shift).collect();
+        let actual = BigInt{digits, negative: a.negative}.normalize();
+        let expected = &a * &BigInt::from_u64(2u64.pow(shift as u32));
+        assert_eq!(actual, expected);
         }
     }
 }

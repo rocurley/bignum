@@ -1,4 +1,4 @@
-use crate::low_level::{shifted_digits, sub_assign_digits};
+use crate::low_level::{shr_digits, sub_assign_digits};
 use crate::BigInt;
 
 pub fn div_exact(num: &BigInt, denom: &BigInt) -> BigInt {
@@ -39,12 +39,12 @@ fn cancell_common_pow_twos(a: &BigInt, b: &BigInt) -> (BigInt, BigInt) {
     let bitshift = std::cmp::min(a_digits[0].trailing_zeros(), b_digits[0].trailing_zeros()) as u8;
     let a = BigInt {
         negative: a.negative,
-        digits: shifted_digits(a_digits, bitshift).collect(),
+        digits: shr_digits(a_digits, bitshift).collect(),
     }
     .normalize();
     let b = BigInt {
         negative: b.negative,
-        digits: shifted_digits(b_digits, bitshift).collect(),
+        digits: shr_digits(b_digits, bitshift).collect(),
     }
     .normalize();
     (a, b)
