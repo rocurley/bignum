@@ -164,19 +164,54 @@ mod tests {
                 })
         })
     }
+    fn check_add_fourier_term(inputs: AddFourierTermInputs) {
+        let mut actual = inputs.acc.clone();
+        add_fourier_term(
+            &mut actual,
+            &inputs.x,
+            inputs.pow,
+            inputs.order,
+            inputs.mod_exp,
+        );
+        let prim_root_exp = 2 * 64 * inputs.mod_exp / inputs.order; // g = 2^prim_root_exp
+        let prim_root = &BigInt::from_u64(1) << BitShift::from_usize(prim_root_exp);
+        dbg!(&prim_root);
+        let mut to_add = inputs.x;
+        for _ in 0..inputs.pow {
+            to_add = succ_mod(&(&to_add * &prim_root), inputs.mod_exp);
+        }
+        let expected = succ_mod(&(inputs.acc + to_add), inputs.mod_exp);
+        assert_eq!(actual, expected);
+    }
     proptest! {
         #[test]
         fn test_add_fourier_term(inputs in any_add_fourier_term_inputs()) {
-            let mut actual = inputs.acc.clone();
-            add_fourier_term(&mut actual, &inputs.x, inputs.pow, inputs.order, inputs.mod_exp);
-            let prim_root_exp = 2 * 64 * inputs.mod_exp / inputs.order; // g = 2^prim_root_exp
-            let prim_root = &BigInt::from_u64(1) << BitShift::from_usize(prim_root_exp);
-            let mut to_add = inputs.x;
-            for _ in 0..inputs.pow {
-                to_add = &to_add * &prim_root;
-            }
-            let expected = succ_mod(&(inputs.acc + to_add), inputs.mod_exp);
-            assert_eq!(actual, expected);
+            check_add_fourier_term(inputs)
+        }
+    }
+    #[test]
+    fn test_add_fourier_term_hardcoded() {
+        let test_cases = vec![
+            AddFourierTermInputs {
+                acc: BigInt::ZERO,
+                x: BigInt {
+                    negative: false,
+                    digits: vec![0, 1],
+                },
+                pow: 1,
+                order: 4,
+                mod_exp: 1,
+            },
+            AddFourierTermInputs {
+                acc: BigInt::ZERO,
+                x: BigInt::from_u64(0xffffffff00000001),
+                pow: 3,
+                order: 4,
+                mod_exp: 1,
+            },
+        ];
+        for test_case in test_cases {
+            check_add_fourier_term(test_case);
         }
     }
     proptest! {
