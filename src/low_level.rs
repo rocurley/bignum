@@ -191,7 +191,7 @@ pub fn cmp_digits_slice(mut x: &[u64], mut y: &[u64]) -> Ordering {
     Ordering::Equal
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub struct BitShift {
     pub bits: u8,
     pub digits: usize,
@@ -217,17 +217,33 @@ impl BitShift {
     }
 }
 
-impl Shr<BitShift> for &BigInt {
+impl Shl<BitShift> for &BigInt {
     type Output = BigInt;
-    fn shr(self, shift: BitShift) -> BigInt {
+    fn shl(self, shift: BitShift) -> BigInt {
         let digits = repeat(0)
             .take(shift.digits)
-            .chain(shr_digits(&self.digits, shift.bits))
+            .chain(shl_digits(&self.digits, shift.bits))
             .collect();
         BigInt {
             digits,
             negative: self.negative,
         }
+        .normalize()
+    }
+}
+
+impl Shr<BitShift> for &BigInt {
+    type Output = BigInt;
+    fn shr(self, shift: BitShift) -> BigInt {
+        if shift.digits >= self.digits.len() {
+            return BigInt::ZERO;
+        }
+        let digits = shr_digits(&self.digits[shift.digits..], shift.bits).collect();
+        BigInt {
+            digits,
+            negative: self.negative,
+        }
+        .normalize()
     }
 }
 
@@ -237,7 +253,7 @@ mod tests {
     use crate::schoolbook_mul;
     use crate::test_utils::*;
     use proptest::prelude::*;
-    fn check_shift_left_right(a: BigInt, shift: u8) {
+    fn check_shift_left_right_digits(a: BigInt, shift: u8) {
         let shifted_digits: Vec<u64> = shl_digits(&a.digits, shift).collect();
         dbg!(&shifted_digits);
         let unshifted_digits: Vec<u64> = shr_digits(&shifted_digits, shift).collect();
@@ -250,21 +266,42 @@ mod tests {
     }
     proptest! {
         #[test]
-        fn test_shift_left_right(a in any_bigint(0..20), shift in (0u8..63)) {
-            check_shift_left_right(a, shift);
+        fn test_shift_left_right_digits(a in any_bigint(0..20), shift in (0u8..63)) {
+            check_shift_left_right_digits(a, shift);
         }
     }
     #[test]
-    fn test_shift_left_right_hardcoded() {
-        check_shift_left_right(BigInt::from_u64(2), 63);
+    fn test_shift_left_right_digits_hardcoded() {
+        check_shift_left_right_digits(BigInt::from_u64(2), 63);
+    }
+    fn check_shift_left_right(a: BigInt, shift: BitShift) {
+        let unshifted = &(&a << shift) >> shift;
+        assert_eq!(a, unshifted);
     }
     proptest! {
         #[test]
-        fn test_shift_left_muk(a in any_bigint(0..20), shift in (0u8..63)) {
+        fn test_shift_left_right(a in any_bigint(0..20), shift in any_bitshift(0..20)) {
+            check_shift_left_right(a, shift);
+        }
+    }
+    proptest! {
+        #[test]
+        fn test_shl_digits_mul(a in any_bigint(0..20), shift in (0u8..63)) {
         let digits: Vec<u64> = shl_digits(&a.digits, shift).collect();
         let actual = BigInt{digits, negative: a.negative}.normalize();
         let expected = &a * &BigInt::from_u64(2u64.pow(shift as u32));
         assert_eq!(actual, expected);
+        }
+    }
+    proptest! {
+        #[test]
+        fn test_shl_mul(a in any_bigint(0..20), shift in (0usize..500)) {
+            let actual = &a << BitShift::from_usize(shift);
+            let mut expected = a;
+            for _ in (0..shift) {
+                expected = &expected * &BigInt::from_u64(2);
+            }
+            assert_eq!(actual, expected);
         }
     }
 }

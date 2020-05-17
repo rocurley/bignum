@@ -123,19 +123,19 @@ fn horrible_mod(mut x: BigInt, y: &BigInt) -> BigInt {
         let mut shifted = -y.clone();
         while x < shifted {
             dbg!(&x, &shifted);
-            shifted = &shifted >> BitShift::from_usize(1);
+            shifted = &shifted << BitShift::from_usize(1);
         }
         dbg!(&x, &shifted);
         x -= shifted;
     }
     while x >= *y {
-        let mut shifted = y >> BitShift::from_usize(1);
+        let mut shifted = y << BitShift::from_usize(1);
         let mut prior = y.clone();
         while x >= shifted {
             dec_gas();
             dbg!(&x, &prior, &shifted);
             std::mem::swap(&mut shifted, &mut prior);
-            shifted = &shifted >> BitShift::from_usize(2);
+            shifted = &shifted << BitShift::from_usize(2);
         }
         dbg!(&x, &prior);
         x -= prior;

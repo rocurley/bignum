@@ -1,4 +1,5 @@
 extern crate proptest;
+use crate::low_level::BitShift;
 use crate::BigInt;
 use proptest::prelude::*;
 extern crate rand;
@@ -10,6 +11,9 @@ pub fn any_bigint(range: std::ops::Range<usize>) -> impl Strategy<Value = BigInt
         any::<bool>(),
     )
         .prop_map(|(digits, negative)| BigInt { digits, negative }.normalize())
+}
+pub fn any_bitshift(range: std::ops::Range<usize>) -> impl Strategy<Value = BitShift> {
+    (range, 0u8..64).prop_map(|(digits, bits)| BitShift { digits, bits })
 }
 pub fn random_bigint(rng: &mut rand_chacha::ChaCha8Rng, size: usize) -> BigInt {
     let mut digits = vec![0; size];
