@@ -53,7 +53,7 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: BigInt) 
 // order divides mod_exp*64
 // order is a power of two
 //
-// This means that k^order = 1 mod B
+// This means that g^order = 1 mod B
 // This function will apply:
 // acc += g^pow * x mod B
 // preserving 0 <= acc < B
@@ -137,6 +137,48 @@ mod tests {
     use crate::schoolbook_mul;
     use crate::test_utils::*;
     use proptest::prelude::*;
+    #[derive(Debug)]
+    struct AddFourierTermInputs {
+        acc: BigInt,
+        x: BigInt,
+        pow: usize,
+        order: usize,
+        mod_exp: usize,
+    }
+    fn any_add_fourier_term_inputs() -> impl Strategy<Value = AddFourierTermInputs> {
+        ((1u32..3), (1usize..3)).prop_flat_map(|(k, mod_exp_mul)| {
+            let order = 2usize.pow(k);
+            let mod_exp_divisor_pow = std::cmp::max(6 /*64=2^6*/, k) - 6;
+            let mod_exp = 2usize.pow(mod_exp_divisor_pow) * mod_exp_mul;
+            (
+                0..order,
+                any_bigint(mod_exp + 1..mod_exp + 2),
+                any_bigint(mod_exp + 1..mod_exp + 2),
+            )
+                .prop_map(move |(pow, acc_raw, x_raw)| AddFourierTermInputs {
+                    acc: succ_mod(&acc_raw, mod_exp),
+                    x: succ_mod(&x_raw, mod_exp),
+                    pow,
+                    order,
+                    mod_exp,
+                })
+        })
+    }
+    proptest! {
+        #[test]
+        fn test_add_fourier_term(inputs in any_add_fourier_term_inputs()) {
+            let mut actual = inputs.acc.clone();
+            add_fourier_term(&mut actual, &inputs.x, inputs.pow, inputs.order, inputs.mod_exp);
+            let prim_root_exp = 2 * 64 * inputs.mod_exp / inputs.order; // g = 2^prim_root_exp
+            let prim_root = &BigInt::from_u64(1) << BitShift::from_usize(prim_root_exp);
+            let mut to_add = inputs.x;
+            for _ in 0..inputs.pow {
+                to_add = &to_add * &prim_root;
+            }
+            let expected = succ_mod(&(inputs.acc + to_add), inputs.mod_exp);
+            assert_eq!(actual, expected);
+        }
+    }
     proptest! {
         #[test]
         fn test_horrible_mod_small(a in any::<u64>(), b in (1..u64::MAX)) {
