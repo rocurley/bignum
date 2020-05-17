@@ -71,7 +71,7 @@ fn add_fourier_term(acc: &mut BigInt, x: &BigInt, pow: usize, order: usize, mod_
     // g^pow = +/- 2^shift_bits
     // where +/- is determined by negative
     let shift = BitShift::from_usize(shift_bits);
-    let shifted = x >> shift;
+    let shifted = x << shift;
     if negative {
         *acc -= shifted;
     } else {
@@ -146,7 +146,7 @@ mod tests {
         mod_exp: usize,
     }
     fn any_add_fourier_term_inputs() -> impl Strategy<Value = AddFourierTermInputs> {
-        ((1u32..3), (1usize..3)).prop_flat_map(|(k, mod_exp_mul)| {
+        ((1u32..5), (1usize..100)).prop_flat_map(|(k, mod_exp_mul)| {
             let order = 2usize.pow(k);
             let mod_exp_divisor_pow = std::cmp::max(6 /*64=2^6*/, k) - 6;
             let mod_exp = 2usize.pow(mod_exp_divisor_pow) * mod_exp_mul;
@@ -175,7 +175,6 @@ mod tests {
         );
         let prim_root_exp = 2 * 64 * inputs.mod_exp / inputs.order; // g = 2^prim_root_exp
         let prim_root = &BigInt::from_u64(1) << BitShift::from_usize(prim_root_exp);
-        dbg!(&prim_root);
         let mut to_add = inputs.x;
         for _ in 0..inputs.pow {
             to_add = succ_mod(&(&to_add * &prim_root), inputs.mod_exp);
@@ -202,13 +201,15 @@ mod tests {
                 order: 4,
                 mod_exp: 1,
             },
-            AddFourierTermInputs {
-                acc: BigInt::ZERO,
-                x: BigInt::from_u64(0xffffffff00000001),
-                pow: 3,
-                order: 4,
-                mod_exp: 1,
-            },
+            // B = 0x10000000000000001
+            // x = 0x10000000000000000
+            // g =         0x100000000 (8 zeros)
+            // acc += g^pow * x mod B
+            // expected:
+            // acc += 0xffffffff00000001
+            // actual:
+            // acc +=      0x100000000
+            // Note that x mod B = -1, so the result is -g, which means "expected" is correct.
         ];
         for test_case in test_cases {
             check_add_fourier_term(test_case);
