@@ -1,10 +1,14 @@
 use crate::low_level::{add_assign_digits_slice, shl_digits, split_digits_iter, BitShift};
 use crate::BigInt;
+
 // Not an FFT, just a reference implementation for testing.
-pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: BigInt) -> Vec<BigInt> {
-    let chunks = 2 ^ chunks_exp; // 2^k
+pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: &BigInt) -> Vec<BigInt> {
+    if *x == BigInt::ZERO {
+        return Vec::new();
+    }
+    let chunks = 2usize.pow(chunks_exp as u32); // 2^k
     let split: Vec<BigInt> = split_digits_iter(&x.digits, chunk_size)
-        .take(2 ^ chunks)
+        .take(chunks)
         .collect();
     // TODO: it's unclear if we can/should guarantee that this is a multiple of 64. Doing so would
     // eliminate the shifts entirely (and the resulting allocations), leaving only a call to
@@ -19,6 +23,35 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: BigInt) 
             acc
         })
         .collect()
+}
+
+pub fn inv_fourier(mod_exp: usize, chunk_size: usize, x: &[BigInt]) -> BigInt {
+    let mut out = BigInt::ZERO;
+    if x.len() == 0 {
+        return out;
+    }
+    if x.len().count_ones() != 1 {
+        panic!(format!(
+            "Expected length of x to be a power of 2, but was instead {}",
+            x.len()
+        ));
+    }
+    let chunks_exp = x.len().trailing_zeros();
+    for k in 0..x.len() {
+        //TODO: these temporary values could be avoided with some care
+        let mut acc = BigInt::ZERO;
+        for (i, chunk) in x.iter().enumerate() {
+            add_fourier_term(&mut acc, chunk, (x.len() - i - 1) * k, x.len(), mod_exp);
+        }
+        // TODO: are we worried about overflowing usize here?
+        let digits_shift = k * chunk_size;
+        if digits_shift == 0 {
+            out += &acc >> BitShift::from_usize(chunks_exp as usize);
+        } else {
+            out += &acc << BitShift::from_usize(digits_shift * 64 - chunks_exp as usize);
+        }
+    }
+    out
 }
 
 // Preconditions:
@@ -113,6 +146,37 @@ mod tests {
     use crate::schoolbook_mul;
     use crate::test_utils::*;
     use proptest::prelude::*;
+    #[derive(Debug)]
+    struct FourierInputs {
+        x: BigInt,
+        chunks_exp: usize,
+        mod_exp: usize,
+        chunk_size: usize,
+    }
+    fn any_fourier_inputs() -> impl Strategy<Value = FourierInputs> {
+        (1u32..5, any_bigint(0..100)).prop_map(|(chunks_exp, x)| {
+            let chunks = 2usize.pow(chunks_exp);
+            let chunk_size = (x.digits.len() + chunks - 1) / chunks;
+            let mod_exp = chunk_size * 64;
+            FourierInputs {
+                x,
+                chunks_exp: chunks_exp as usize,
+                mod_exp,
+                chunk_size,
+            }
+        })
+    }
+    fn check_fourier_inv(x: BigInt, mod_exp: usize, chunk_size: usize, chunks_exp: usize) {
+        let p = fourier(mod_exp, chunk_size, chunks_exp, &x);
+        let x2 = inv_fourier(mod_exp, chunk_size, &p);
+        assert_eq!(x, x2);
+    }
+    proptest! {
+        #[test]
+        fn test_fourier_inv(inputs in any_fourier_inputs()) {
+            check_fourier_inv(inputs.x, inputs.mod_exp, inputs.chunk_size, inputs.chunks_exp)
+        }
+    }
     #[derive(Debug)]
     struct AddFourierTermInputs {
         acc: BigInt,
