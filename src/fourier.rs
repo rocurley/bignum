@@ -10,37 +10,13 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: BigInt) 
     // eliminate the shifts entirely (and the resulting allocations), leaving only a call to
     // add_assign_digits_slice. The allocation could in any case be eliminated by removing the call
     // to collect in shl_digits, and having add_assign_digits_slice take an iterator for other.
-    let prim_root_exp = 2 * mod_exp / chunks; // 2N'/(2^k)
-    let base_shift = BitShift::from_usize(prim_root_exp);
     (0..chunks)
         .map(|k| {
-            // let g=2^prim_root_exp
-            // let N'=64*mod_exp
-            // let k = chunks_exp
-            // we know that g^(2^k) = 1 mod 2^N' + 1
-            // we want to compute g^x * y mod 2^N' + 1
-            // g^x, mod nothing, will take 4N'/(2^k)x bits. However, we can mod x by 2^k,
-            // getting an upper bound of 4N' bits.
-            // Before applying any mod (except for the x mod 2^k), we've got a simple power of two.
-            // We can apply the mod extremely cheaply:
-            // B = 2^N' + 1
-            // x = x0 + x1 (B-1) + x2 (B-1)^2 + x3 (B-1)^3
-            // x = x0 - x1 + x2 - x3
-            // Only one of these will be populated at all, so it will be +- a power of two.
-            let mut digits = vec![0; 2 * mod_exp + 1];
+            let mut acc = BigInt::ZERO;
             for (i, chunk) in split.iter().enumerate() {
-                let pow = prim_root_exp * ((i * k) % chunks);
-                let shift = BitShift::from_usize(pow % 64 * mod_exp);
-                let negative = (pow / (64 * mod_exp)) % 2;
-                add_assign_digits_slice(
-                    &mut digits[shift.digits..],
-                    shl_digits(&chunk.digits, shift.bits),
-                );
+                add_fourier_term(&mut acc, chunk, i * k, chunks, mod_exp);
             }
-            BigInt {
-                digits,
-                negative: false,
-            }
+            acc
         })
         .collect()
 }
