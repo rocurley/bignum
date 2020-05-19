@@ -46,18 +46,34 @@ pub fn inv_fourier(mod_exp: usize, chunk_size: usize, p: &[BigInt]) -> BigInt {
         let mut acc = BigInt::ZERO;
         for (i, chunk) in p.iter().enumerate() {
             let pow = (p.len() - i) * k;
-            println!("acc += g^{} * {:?}", pow, chunk);
             add_fourier_term(&mut acc, chunk, pow, p.len(), mod_exp);
         }
         // TODO: are we worried about overflowing usize here?
         let digits_shift = k * chunk_size;
-        if digits_shift == 0 {
-            out += &acc >> BitShift::from_usize(chunks_exp as usize);
-        } else {
-            out += &acc << BitShift::from_usize(digits_shift * 64 - chunks_exp as usize);
-        }
+        // We want to divide by 2^chunks_exp. However, we must do so modularly. We know that
+        // 2^(2*64*mod_exp) = 1,
+        acc = modular_shift(&acc, 2 * 64 * mod_exp - chunks_exp as usize, mod_exp);
+        acc = succ_mod(&acc, mod_exp);
+        //acc = &acc >> BitShift::from_usize(chunks_exp as usize);
+        out += &acc << BitShift::from_usize(digits_shift * 64);
     }
     out
+}
+
+fn modular_shift(x: &BigInt, shift: usize, mod_exp: usize) -> BigInt {
+    // We can apply the mod extremely cheaply:
+    // B = 2^N' + 1
+    // x = x0 + x1 (B-1) + x2 (B-1)^2 + x3 (B-1)^3
+    // x = x0 - x1 + x2 - x3
+    // Only one of these will be populated at all, so it will be +- a power of two.
+    let shift_bits = shift % (64 * mod_exp);
+    let negative = ((shift / (64 * mod_exp)) % 2) != 0;
+    let shifted = x << BitShift::from_usize(shift_bits);
+    if negative {
+        -shifted
+    } else {
+        shifted
+    }
 }
 
 // Preconditions:
@@ -75,24 +91,7 @@ pub fn inv_fourier(mod_exp: usize, chunk_size: usize, p: &[BigInt]) -> BigInt {
 fn add_fourier_term(acc: &mut BigInt, x: &BigInt, pow: usize, order: usize, mod_exp: usize) {
     let prim_root_exp = 2 * 64 * mod_exp / order; // g = 2^prim_root_exp
     let root_pow_exp = prim_root_exp * (pow % order); // g^pow = 2^root_pow_exp
-
-    // We can apply the mod extremely cheaply:
-    // B = 2^N' + 1
-    // x = x0 + x1 (B-1) + x2 (B-1)^2 + x3 (B-1)^3
-    // x = x0 - x1 + x2 - x3
-    // Only one of these will be populated at all, so it will be +- a power of two.
-    let shift_bits = root_pow_exp % (64 * mod_exp);
-    let negative = ((root_pow_exp / (64 * mod_exp)) % 2) != 0;
-    // g^pow = +/- 2^shift_bits
-    // where +/- is determined by negative
-    let shift = BitShift::from_usize(shift_bits);
-    let shifted = x << shift;
-    if negative {
-        *acc -= shifted;
-    } else {
-        *acc += shifted;
-    }
-    dbg!(&acc);
+    *acc += modular_shift(x, root_pow_exp, mod_exp);
     *acc = succ_mod(&acc, mod_exp);
 }
 
@@ -117,7 +116,7 @@ fn succ_mod(x: &BigInt, mod_blocks: usize) -> BigInt {
     // x0 - x1 + x1 B
     // x0 - x1
     assert!(x.digits.len() <= mod_blocks * 2);
-    let [x0, x1] = dbg!(split_digits!(&x.digits, mod_blocks, 2));
+    let [x0, x1] = split_digits!(&x.digits, mod_blocks, 2);
     let mut diff = x0 - x1;
     if x.negative {
         diff = -diff;
@@ -201,6 +200,7 @@ mod tests {
             1,
         );
         check_fourier_inv(BigInt::from_u64(0x100000001), 1, 1, 2);
+        check_fourier_inv(BigInt::from_u64(0x4000000000000001), 1, 1, 2);
     }
     #[derive(Debug)]
     struct AddFourierTermInputs {
@@ -307,7 +307,7 @@ mod tests {
     }
     proptest! {
         #[test]
-        fn test_horrible_mod(mut a in nonnegative_bigint(0..5), mut b in positive_bigint(0..3)) {
+        fn test_horrible_mod(a in nonnegative_bigint(0..5), b in positive_bigint(0..3)) {
             let m = horrible_mod(a.clone(), &b);
             let r = div_exact(&(&a - &m), &b);
             let a_reconstructed = (&r * &b) + m;

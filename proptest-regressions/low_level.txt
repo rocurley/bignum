@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 0dd07827afe688801d6d50307f2caf2e21130b88d7a51690fe08d3906c337563 # shrinks to a = BigInt { negative: false, digits: "[80000000000]" }, shift = 21
+cc c92d341eac6346f34dd0d8c0407212a1605dab9f9f0bfdda146ec16e58e48739 # shrinks to a = BigInt { negative: false, digits: "[1]" }, shift = 1
+cc 14c28856f85f4a3c1bffeb265aef885c3134120db690d95608df0bd83bc687cd # shrinks to a = BigInt { negative: false, digits: "[]" }, shift = 64
