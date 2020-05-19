@@ -12,9 +12,11 @@ pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
     let pq: Vec<BigInt> = p
         .into_iter()
         .zip(q.into_iter())
-        .map(|(p, q)| &p * &q)
+        .map(|(p, q)| succ_mod_3(&(&p * &q), mod_exp))
         .collect();
-    inv_fourier(mod_exp, chunk_size, &pq)
+    let mut out = inv_fourier(mod_exp, chunk_size, &pq);
+    out.negative = x.negative ^ y.negative;
+    out.normalize()
 }
 
 // Not an FFT, just a reference implementation for testing.
@@ -69,7 +71,7 @@ pub fn inv_fourier(mod_exp: usize, chunk_size: usize, p: &[BigInt]) -> BigInt {
         // We want to divide by 2^chunks_exp. However, we must do so modularly. We know that
         // 2^(2*64*mod_exp) = 1,
         acc = modular_shift(&acc, 2 * 64 * mod_exp - chunks_exp as usize, mod_exp);
-        acc = succ_mod(&acc, mod_exp);
+        acc = succ_mod_2(&acc, mod_exp);
         //acc = &acc >> BitShift::from_usize(chunks_exp as usize);
         out += &acc << BitShift::from_usize(digits_shift * 64);
     }
@@ -108,7 +110,7 @@ fn add_fourier_term(acc: &mut BigInt, x: &BigInt, pow: usize, order: usize, mod_
     let prim_root_exp = 2 * 64 * mod_exp / order; // g = 2^prim_root_exp
     let root_pow_exp = prim_root_exp * (pow % order); // g^pow = 2^root_pow_exp
     *acc += modular_shift(x, root_pow_exp, mod_exp);
-    *acc = succ_mod(&acc, mod_exp);
+    *acc = succ_mod_2(&acc, mod_exp);
 }
 
 // 2^(64n) + 1
@@ -122,8 +124,36 @@ fn pow_succ(n: usize) -> BigInt {
     }
 }
 
-// Computes x mod (2^(64 mod_blocks) + 1)
-fn succ_mod(x: &BigInt, mod_blocks: usize) -> BigInt {
+// Computes x mod (2^(64 mod_blocks) + 1). Limited to inputs of length 2*mod_blocks or less.
+fn succ_mod_3(x: &BigInt, mod_blocks: usize) -> BigInt {
+    if mod_blocks == 0 {
+        return BigInt::ZERO;
+    }
+    // B = 2^N + 1
+    // x0 + x1 (B-1) + x2 (B-1)^2
+    // x0 - x1 + x2
+    debug_assert!(
+        x.digits.len() <= mod_blocks * 3,
+        "Expected {} <= {}",
+        x.digits.len(),
+        mod_blocks * 3
+    );
+    let [x0, x1, x2] = split_digits!(&x.digits, mod_blocks, 3);
+    let mut diff = x0 - x1 + x2;
+    let b = pow_succ(mod_blocks);
+    if diff > b {
+        diff -= b.clone();
+    }
+    if x.negative {
+        diff = -diff;
+    }
+    if diff < BigInt::ZERO {
+        diff += b;
+    }
+    diff
+}
+// Computes x mod (2^(64 mod_blocks) + 1). Limited to inputs of length 2*mod_blocks or less.
+fn succ_mod_2(x: &BigInt, mod_blocks: usize) -> BigInt {
     if mod_blocks == 0 {
         return BigInt::ZERO;
     }
@@ -131,7 +161,12 @@ fn succ_mod(x: &BigInt, mod_blocks: usize) -> BigInt {
     // x0 + x1 (B-1)
     // x0 - x1 + x1 B
     // x0 - x1
-    assert!(x.digits.len() <= mod_blocks * 2);
+    debug_assert!(
+        x.digits.len() <= mod_blocks * 2,
+        "Expected {} <= {}",
+        x.digits.len(),
+        mod_blocks * 2
+    );
     let [x0, x1] = split_digits!(&x.digits, mod_blocks, 2);
     let mut diff = x0 - x1;
     if x.negative {
@@ -237,8 +272,8 @@ mod tests {
                 any_bigint(mod_exp + 1..mod_exp + 2),
             )
                 .prop_map(move |(pow, acc_raw, x_raw)| AddFourierTermInputs {
-                    acc: succ_mod(&acc_raw, mod_exp),
-                    x: succ_mod(&x_raw, mod_exp),
+                    acc: succ_mod_2(&acc_raw, mod_exp),
+                    x: succ_mod_2(&x_raw, mod_exp),
                     pow,
                     order,
                     mod_exp,
@@ -258,9 +293,9 @@ mod tests {
         let prim_root = &BigInt::from_u64(1) << BitShift::from_usize(prim_root_exp);
         let mut to_add = inputs.x;
         for _ in 0..inputs.pow {
-            to_add = succ_mod(&(&to_add * &prim_root), inputs.mod_exp);
+            to_add = succ_mod_2(&(&to_add * &prim_root), inputs.mod_exp);
         }
-        let expected = succ_mod(&(inputs.acc + to_add), inputs.mod_exp);
+        let expected = succ_mod_2(&(inputs.acc + to_add), inputs.mod_exp);
         assert_eq!(actual, expected);
     }
     proptest! {
@@ -332,14 +367,22 @@ mod tests {
     }
     proptest! {
         #[test]
-        fn test_succ_mod(a in any_bigint(0..5)) {
+        fn test_succ_mod_2(a in any_bigint(0..10)) {
             let mod_blocks = (a.digits.len() + 1)/2;
             let mod_base = pow_succ(mod_blocks);
-            assert_eq!(succ_mod(&a, mod_blocks), horrible_mod(a, &mod_base));
+            assert_eq!(succ_mod_2(&a, mod_blocks), horrible_mod(a, &mod_base));
+        }
+    }
+    proptest! {
+        #[test]
+        fn test_succ_mod_3(a in any_bigint(0..10)) {
+            let mod_blocks = (a.digits.len() + 2)/3;
+            let mod_base = pow_succ(mod_blocks);
+            assert_eq!(succ_mod_3(&a, mod_blocks), horrible_mod(a, &mod_base));
         }
     }
     #[test]
-    fn test_succ_mod_hardcoded() {
+    fn test_succ_mod_2_hardcoded() {
         let test_cases = vec![(
             BigInt {
                 negative: true,
@@ -349,12 +392,30 @@ mod tests {
         )];
         for (a, mod_blocks) in test_cases {
             let mod_base = pow_succ(mod_blocks);
-            assert_eq!(succ_mod(&a, mod_blocks), horrible_mod(a, &mod_base));
+            assert_eq!(succ_mod_2(&a, mod_blocks), horrible_mod(a, &mod_base));
         }
     }
     proptest! {
         #[test]
         fn test_fourier_mul(a in any_bigint(0..20),b in any_bigint(0..20)) {
+            let expected = schoolbook_mul(&a, &b);
+            let actual = fourier_mul(&a, &b);
+            assert_eq!(expected, actual);
+        }
+    }
+    #[test]
+    fn test_fourier_mul_hardcoded() {
+        let test_cases = vec![(
+            BigInt {
+                negative: false,
+                digits: vec![0, 1],
+            },
+            BigInt {
+                negative: false,
+                digits: vec![0, 0, 0, 0, 0, 0, 0, 1],
+            },
+        )];
+        for (a, b) in test_cases {
             let expected = schoolbook_mul(&a, &b);
             let actual = fourier_mul(&a, &b);
             assert_eq!(expected, actual);

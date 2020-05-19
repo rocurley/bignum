@@ -8,3 +8,4 @@ cc 9ed61d552bdccb45d39196a1de384c3f8e4f95a20f1b1f2937b9f4cb83b686ae # shrinks to
 cc b0386b4b78e70505b4195198964eee1bb48f7ac8046483e32c0d8db5c0571b77 # shrinks to a = 16412031860904944760, b = 1
 cc 552cf9c5731f83a5110d55f68226ad88797216cc10314483d8ba9b38d6ac5349 # shrinks to a = BigInt { negative: false, digits: "[]" }
 cc 3b3a6de10e0d4dda3bde49bbc01043528935db6d7716bea0f67b8d5a4422db2f # shrinks to inputs = AddFourierTermInputs { acc: BigInt { negative: false, digits: "[]" }, x: BigInt { negative: false, digits: "[0, 1]" }, pow: 1, order: 4, mod_exp: 1 }
+cc 5718f9d34db0c84b619139a304b4facbc6eacbdf856a79080b2ef109e6c9037f # shrinks to a = BigInt { negative: true, digits: "[1]" }, b = BigInt { negative: false, digits: "[1]" }
