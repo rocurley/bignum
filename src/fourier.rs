@@ -160,7 +160,7 @@ mod tests {
         chunk_size: usize,
     }
     fn any_fourier_inputs() -> impl Strategy<Value = FourierInputs> {
-        (1u32..5, nonnegative_bigint(0..100)).prop_map(|(chunks_exp, x)| {
+        (1u32..5, nonnegative_bigint(0..10)).prop_map(|(chunks_exp, x)| {
             let chunks = 2usize.pow(chunks_exp);
             let chunk_size = (x.digits.len() + chunks - 1) / chunks;
             FourierInputs {
@@ -193,6 +193,7 @@ mod tests {
             1,
             1,
         );
+        check_fourier_inv(BigInt::from_u64(0x100000001), 1, 1, 2);
     }
     #[derive(Debug)]
     struct AddFourierTermInputs {
@@ -267,6 +268,23 @@ mod tests {
             // actual:
             // acc +=      0x100000000
             // Note that x mod B = -1, so the result is -g, which means "expected" is correct.
+            AddFourierTermInputs {
+                acc: BigInt::ZERO,
+                x: BigInt {
+                    negative: false,
+                    digits: vec![0, 1],
+                },
+                pow: 1,
+                order: 4,
+                mod_exp: 1,
+            },
+            AddFourierTermInputs {
+                acc: BigInt::from_u64(0xffffffff),
+                x: BigInt::from_u64(0x100000001),
+                pow: 3,
+                order: 4,
+                mod_exp: 1,
+            },
         ];
         for test_case in test_cases {
             check_add_fourier_term(test_case);
