@@ -161,9 +161,12 @@ pub fn split_digits_iter<'a>(
 ) -> impl Iterator<Item = BigInt> + 'a {
     digits
         .chunks(chunk_size)
-        .map(|digits| BigInt {
-            digits: digits.to_vec(),
-            negative: false,
+        .map(|digits| {
+            BigInt {
+                digits: digits.to_vec(),
+                negative: false,
+            }
+            .normalize()
         })
         .chain(std::iter::repeat(BigInt::ZERO))
 }
