@@ -92,6 +92,7 @@ fn add_fourier_term(acc: &mut BigInt, x: &BigInt, pow: usize, order: usize, mod_
     } else {
         *acc += shifted;
     }
+    dbg!(&acc);
     *acc = succ_mod(&acc, mod_exp);
 }
 
@@ -116,9 +117,11 @@ fn succ_mod(x: &BigInt, mod_blocks: usize) -> BigInt {
     // x0 - x1 + x1 B
     // x0 - x1
     assert!(x.digits.len() <= mod_blocks * 2);
-    let [x0, x1] = split_digits!(&x.digits, mod_blocks, 2);
+    let [x0, x1] = dbg!(split_digits!(&x.digits, mod_blocks, 2));
     let mut diff = x0 - x1;
-    diff.negative ^= x.negative;
+    if x.negative {
+        diff = -diff;
+    }
     if diff < BigInt::ZERO {
         diff + pow_succ(mod_blocks)
     } else {
@@ -131,7 +134,11 @@ fn horrible_mod(mut x: BigInt, y: &BigInt) -> BigInt {
         panic!("Mod by non-positive number")
     }
     if x < BigInt::ZERO {
-        panic!("Mod of negative number")
+        let mut shifted = -y.clone();
+        while x < shifted {
+            shifted = &shifted << BitShift::from_usize(1);
+        }
+        x -= shifted;
     }
     while x >= *y {
         let mut shifted = y << BitShift::from_usize(1);
@@ -309,8 +316,22 @@ mod tests {
     }
     proptest! {
         #[test]
-        fn test_succ_mod(a in nonnegative_bigint(0..5)) {
+        fn test_succ_mod(a in any_bigint(0..5)) {
             let mod_blocks = (a.digits.len() + 1)/2;
+            let mod_base = pow_succ(mod_blocks);
+            assert_eq!(succ_mod(&a, mod_blocks), horrible_mod(a, &mod_base));
+        }
+    }
+    #[test]
+    fn test_succ_mod_hardcoded() {
+        let test_cases = vec![(
+            BigInt {
+                negative: true,
+                digits: vec![1, 1],
+            },
+            1,
+        )];
+        for (a, mod_blocks) in test_cases {
             let mod_base = pow_succ(mod_blocks);
             assert_eq!(succ_mod(&a, mod_blocks), horrible_mod(a, &mod_base));
         }
