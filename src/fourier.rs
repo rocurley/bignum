@@ -1,6 +1,22 @@
 use crate::low_level::{add_assign_digits_slice, shl_digits, split_digits_iter, BitShift};
 use crate::BigInt;
 
+pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
+    let chunks_exp = 3usize;
+    let chunks = 2usize.pow(chunks_exp as u32);
+    let max_len = std::cmp::max(x.digits.len(), y.digits.len());
+    let chunk_size = (max_len + chunks - 1) / chunks;
+    let mod_exp = 2 * chunk_size + chunks_exp + 3; //Why 3?
+    let p = fourier(mod_exp, chunk_size, chunks_exp, &x);
+    let q = fourier(mod_exp, chunk_size, chunks_exp, &y);
+    let pq: Vec<BigInt> = p
+        .into_iter()
+        .zip(q.into_iter())
+        .map(|(p, q)| &p * &q)
+        .collect();
+    inv_fourier(mod_exp, chunk_size, &pq)
+}
+
 // Not an FFT, just a reference implementation for testing.
 // mod_exp: B = 2^(64*mod_exp) + 1, fourier transform will be mod B.
 // chunks_exp: break up into a vector of 2^chunks_exp before FFT.
@@ -334,6 +350,14 @@ mod tests {
         for (a, mod_blocks) in test_cases {
             let mod_base = pow_succ(mod_blocks);
             assert_eq!(succ_mod(&a, mod_blocks), horrible_mod(a, &mod_base));
+        }
+    }
+    proptest! {
+        #[test]
+        fn test_fourier_mul(a in any_bigint(0..20),b in any_bigint(0..20)) {
+            let expected = schoolbook_mul(&a, &b);
+            let actual = fourier_mul(&a, &b);
+            assert_eq!(expected, actual);
         }
     }
 }
