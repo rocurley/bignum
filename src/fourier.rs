@@ -4,8 +4,8 @@ use crate::BigInt;
 pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
     let chunks_exp = 3usize;
     let chunks = 2usize.pow(chunks_exp as u32);
-    let max_len = std::cmp::max(x.digits.len(), y.digits.len());
-    let chunk_size = (max_len + chunks - 1) / chunks;
+    let output_len = x.digits.len() + y.digits.len() + 1;
+    let chunk_size = (output_len + chunks - 1) / chunks;
     let mod_exp = 2 * chunk_size + chunks_exp + 3; //Why 3?
     let p = fourier(mod_exp, chunk_size, chunks_exp, &x);
     let q = fourier(mod_exp, chunk_size, chunks_exp, &y);
@@ -32,6 +32,7 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: &BigInt)
     let split: Vec<BigInt> = split_digits_iter(&x.digits, chunk_size)
         .take(chunks)
         .collect();
+    dbg!(&split);
     // TODO: it's unclear if we can/should guarantee that this is a multiple of 64. Doing so would
     // eliminate the shifts entirely (and the resulting allocations), leaving only a call to
     // add_assign_digits_slice. The allocation could in any case be eliminated by removing the call
