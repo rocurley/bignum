@@ -34,21 +34,26 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: &BigInt)
         .collect();
     dbg!(&split);
     let mut out = vec![BigInt::ZERO; chunks];
-    fourier_inner_fast(mod_exp, &split, 1, &mut out);
+    fourier_inner_fast::<NormalF>(mod_exp, &split, 1, &mut out);
     out
 }
 
-fn fourier_inner_fast(mod_exp: usize, xs: &[BigInt], stride: usize, out: &mut [BigInt]) {
+fn fourier_inner_fast<F: FourierMethod>(
+    mod_exp: usize,
+    xs: &[BigInt],
+    stride: usize,
+    out: &mut [BigInt],
+) {
     // Make the borrow checker happy by doing this before the borrow
     let order = out.len();
     let half_len = out.len() / 2;
     if order <= 2 {
-        fourier_inner_quadratic(mod_exp, xs, stride, out);
+        fourier_inner_quadratic::<F>(mod_exp, xs, stride, out);
         return;
     }
     let (left_out, right_out) = out.split_at_mut(half_len);
-    fourier_inner_fast(mod_exp, xs, stride * 2, left_out);
-    fourier_inner_fast(mod_exp, &xs[stride..], stride * 2, right_out);
+    fourier_inner_fast::<F>(mod_exp, xs, stride * 2, left_out);
+    fourier_inner_fast::<F>(mod_exp, &xs[stride..], stride * 2, right_out);
     dbg!(&*left_out);
     dbg!(&*right_out);
     for (i, (l, r)) in left_out.iter_mut().zip(right_out.iter_mut()).enumerate() {
@@ -57,28 +62,29 @@ fn fourier_inner_fast(mod_exp: usize, xs: &[BigInt], stride: usize, out: &mut [B
         // r = l + r g^(i + half_len)
         // TODO: we could avoid an allocation here by re-using temp, clearing it every loop
         let mut new_r = l.clone();
-        add_fourier_term(&mut new_r, &r, i + half_len, order, mod_exp);
-        add_fourier_term(l, &r, i, order, mod_exp);
+        add_fourier_term(
+            &mut new_r,
+            &r,
+            F::pow(i + half_len, 1, order),
+            order,
+            mod_exp,
+        );
+        add_fourier_term(l, &r, F::pow(i, 1, order), order, mod_exp);
         *r = new_r;
     }
     dbg!(out);
 }
 
-// TODO: either use strided, or pass in a slice and a stride. Strided may be overkill since you
-// don't need mutable access. Have each parity write to half of output, then combine in place, so
-// you don't need to alocate nlog(n) space. fourier_inner_fast should perform the "shuffle" to
-// combine the two halves. Maybe add fourier_inner that will contain the branching logic between
-// fourier_inner_fast and fourier_inner_quadratic.
-
-fn fourier_inner_quadratic(mod_exp: usize, xs: &[BigInt], stride: usize, out: &mut [BigInt]) {
-    // TODO: it's unclear if we can/should guarantee that this is a multiple of 64. Doing so would
-    // eliminate the shifts entirely (and the resuThatlting allocations), leaving only a call to
-    // add_assign_digits_slice. The allocation could in any case be eliminated by removing the call
-    // to collect in shl_digits, and having add_assign_digits_slice take an iterator for other.
+fn fourier_inner_quadratic<F: FourierMethod>(
+    mod_exp: usize,
+    xs: &[BigInt],
+    stride: usize,
+    out: &mut [BigInt],
+) {
     let order = out.len();
     for (k, acc) in out.iter_mut().enumerate() {
         for i in 0..order {
-            add_fourier_term(acc, &xs[i * stride], i * k, order, mod_exp);
+            add_fourier_term(acc, &xs[i * stride], F::pow(i, k, order), order, mod_exp);
         }
     }
 }
@@ -112,6 +118,23 @@ pub fn inv_fourier(mod_exp: usize, chunk_size: usize, p: &[BigInt]) -> BigInt {
         out += &acc << BitShift::from_usize(digits_shift * 64);
     }
     out
+}
+
+trait FourierMethod {
+    fn pow(i: usize, k: usize, order: usize) -> usize;
+}
+
+struct NormalF {}
+impl FourierMethod for NormalF {
+    fn pow(i: usize, k: usize, order: usize) -> usize {
+        (i % order) * (k % order)
+    }
+}
+struct InvF {}
+impl FourierMethod for InvF {
+    fn pow(i: usize, k: usize, order: usize) -> usize {
+        ((order - i) % order) * (k % order)
+    }
 }
 
 fn modular_shift(x: &BigInt, shift: usize, mod_exp: usize) -> BigInt {
