@@ -38,6 +38,29 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: &BigInt)
     out
 }
 
+pub fn inv_fourier(mod_exp: usize, chunk_size: usize, p: &[BigInt]) -> BigInt {
+    if p.len() == 0 {
+        return BigInt::ZERO;
+    }
+    if p.len().count_ones() != 1 {
+        panic!(format!(
+            "Expected length of p to be a power of 2, but was instead {}",
+            p.len()
+        ));
+    }
+    let chunks_exp = p.len().trailing_zeros();
+    let mut out_buffer = vec![BigInt::ZERO; p.len()];
+    fourier_inner_fast::<InvF>(mod_exp, p, 1, &mut out_buffer);
+    let mut out = BigInt::ZERO;
+    for (k, mut x) in out_buffer.into_iter().enumerate() {
+        let digits_shift = k * chunk_size;
+        x = modular_shift(&x, 2 * 64 * mod_exp - chunks_exp as usize, mod_exp);
+        x = succ_mod_2(&x, mod_exp);
+        out += &x << BitShift::from_usize(digits_shift * 64);
+    }
+    out
+}
+
 fn fourier_inner_fast<F: FourierMethod>(
     mod_exp: usize,
     xs: &[BigInt],
@@ -87,37 +110,6 @@ fn fourier_inner_quadratic<F: FourierMethod>(
             add_fourier_term(acc, &xs[i * stride], F::pow(i, k, order), order, mod_exp);
         }
     }
-}
-
-pub fn inv_fourier(mod_exp: usize, chunk_size: usize, p: &[BigInt]) -> BigInt {
-    let mut out = BigInt::ZERO;
-    if p.len() == 0 {
-        return out;
-    }
-    if p.len().count_ones() != 1 {
-        panic!(format!(
-            "Expected length of p to be a power of 2, but was instead {}",
-            p.len()
-        ));
-    }
-    let chunks_exp = p.len().trailing_zeros();
-    for k in 0..p.len() {
-        //TODO: these temporary values could be avoided with some care
-        let mut acc = BigInt::ZERO;
-        for (i, chunk) in p.iter().enumerate() {
-            let pow = (p.len() - i) * k;
-            add_fourier_term(&mut acc, chunk, pow, p.len(), mod_exp);
-        }
-        // TODO: are we worried about overflowing usize here?
-        let digits_shift = k * chunk_size;
-        // We want to divide by 2^chunks_exp. However, we must do so modularly. We know that
-        // 2^(2*64*mod_exp) = 1,
-        acc = modular_shift(&acc, 2 * 64 * mod_exp - chunks_exp as usize, mod_exp);
-        acc = succ_mod_2(&acc, mod_exp);
-        //acc = &acc >> BitShift::from_usize(chunks_exp as usize);
-        out += &acc << BitShift::from_usize(digits_shift * 64);
-    }
-    out
 }
 
 trait FourierMethod {
