@@ -253,7 +253,6 @@ impl Shr<BitShift> for &BigInt {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schoolbook_mul;
     use crate::test_utils::*;
     use proptest::prelude::*;
     fn check_shift_left_right_digits(a: BigInt, shift: u8) {
@@ -300,7 +299,7 @@ mod tests {
         fn test_shl_mul(a in any_bigint(0..20), shift in (0usize..500)) {
             let actual = &a << BitShift::from_usize(shift);
             let mut expected = a;
-            for _ in (0..shift) {
+            for _ in 0..shift {
                 expected = &expected * &BigInt::from_u64(2);
             }
             assert_eq!(actual, expected);

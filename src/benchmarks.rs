@@ -3,6 +3,7 @@ use crate::div::{div_exact, inv_u64};
 use crate::schoolbook_mul_vec::schoolbook_mul_vec;
 use crate::test_utils::*;
 use cpuprofiler::PROFILER;
+use fourier::fourier_mul;
 use rand::{Rng, SeedableRng};
 use test::Bencher;
 #[bench]
@@ -56,6 +57,18 @@ fn bench_toom_3_10k(bench: &mut Bencher) {
     let mut profiler = PROFILER.lock().unwrap();
     profiler.start(format!("profiling/toom3.profile")).unwrap();
     bench.iter(|| toom_3(&a, &b));
+    profiler.stop().unwrap();
+}
+#[bench]
+fn bench_fourier_mul(bench: &mut Bencher) {
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+    let a = random_bigint(&mut rng, 10000);
+    let b = random_bigint(&mut rng, 10000);
+    let mut profiler = PROFILER.lock().unwrap();
+    profiler
+        .start(format!("profiling/fourier.profile"))
+        .unwrap();
+    bench.iter(|| fourier_mul(&a, &b));
     profiler.stop().unwrap();
 }
 #[bench]

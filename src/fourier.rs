@@ -1,4 +1,4 @@
-use crate::low_level::{add_assign_digits_slice, shl_digits, split_digits_iter, BitShift};
+use crate::low_level::{split_digits_iter, BitShift};
 use crate::BigInt;
 
 pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
@@ -33,19 +33,54 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: &BigInt)
         .take(chunks)
         .collect();
     dbg!(&split);
+    let mut out = vec![BigInt::ZERO; chunks];
+    fourier_inner_fast(mod_exp, &split, 1, &mut out);
+    out
+}
+
+fn fourier_inner_fast(mod_exp: usize, xs: &[BigInt], stride: usize, out: &mut [BigInt]) {
+    // Make the borrow checker happy by doing this before the borrow
+    let order = out.len();
+    let half_len = out.len() / 2;
+    if order <= 2 {
+        fourier_inner_quadratic(mod_exp, xs, stride, out);
+        return;
+    }
+    let (left_out, right_out) = out.split_at_mut(half_len);
+    fourier_inner_fast(mod_exp, xs, stride * 2, left_out);
+    fourier_inner_fast(mod_exp, &xs[stride..], stride * 2, right_out);
+    dbg!(&*left_out);
+    dbg!(&*right_out);
+    for (i, (l, r)) in left_out.iter_mut().zip(right_out.iter_mut()).enumerate() {
+        // Want:
+        // l = l + r g^i
+        // r = l + r g^(i + half_len)
+        // TODO: we could avoid an allocation here by re-using temp, clearing it every loop
+        let mut new_r = l.clone();
+        add_fourier_term(&mut new_r, &r, i + half_len, order, mod_exp);
+        add_fourier_term(l, &r, i, order, mod_exp);
+        *r = new_r;
+    }
+    dbg!(out);
+}
+
+// TODO: either use strided, or pass in a slice and a stride. Strided may be overkill since you
+// don't need mutable access. Have each parity write to half of output, then combine in place, so
+// you don't need to alocate nlog(n) space. fourier_inner_fast should perform the "shuffle" to
+// combine the two halves. Maybe add fourier_inner that will contain the branching logic between
+// fourier_inner_fast and fourier_inner_quadratic.
+
+fn fourier_inner_quadratic(mod_exp: usize, xs: &[BigInt], stride: usize, out: &mut [BigInt]) {
     // TODO: it's unclear if we can/should guarantee that this is a multiple of 64. Doing so would
-    // eliminate the shifts entirely (and the resulting allocations), leaving only a call to
+    // eliminate the shifts entirely (and the resuThatlting allocations), leaving only a call to
     // add_assign_digits_slice. The allocation could in any case be eliminated by removing the call
     // to collect in shl_digits, and having add_assign_digits_slice take an iterator for other.
-    (0..chunks)
-        .map(|k| {
-            let mut acc = BigInt::ZERO;
-            for (i, chunk) in split.iter().enumerate() {
-                add_fourier_term(&mut acc, chunk, i * k, chunks, mod_exp);
-            }
-            acc
-        })
-        .collect()
+    let order = out.len();
+    for (k, acc) in out.iter_mut().enumerate() {
+        for i in 0..order {
+            add_fourier_term(acc, &xs[i * stride], i * k, order, mod_exp);
+        }
+    }
 }
 
 pub fn inv_fourier(mod_exp: usize, chunk_size: usize, p: &[BigInt]) -> BigInt {
@@ -180,29 +215,6 @@ fn succ_mod_2(x: &BigInt, mod_blocks: usize) -> BigInt {
     }
 }
 
-fn horrible_mod(mut x: BigInt, y: &BigInt) -> BigInt {
-    if *y <= BigInt::ZERO {
-        panic!("Mod by non-positive number")
-    }
-    if x < BigInt::ZERO {
-        let mut shifted = -y.clone();
-        while x < shifted {
-            shifted = &shifted << BitShift::from_usize(1);
-        }
-        x -= shifted;
-    }
-    while x >= *y {
-        let mut shifted = y << BitShift::from_usize(1);
-        let mut prior = y.clone();
-        while x >= shifted {
-            std::mem::swap(&mut shifted, &mut prior);
-            shifted = &shifted << BitShift::from_usize(2);
-        }
-        x -= prior;
-    }
-    x
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,6 +228,29 @@ mod tests {
         chunks_exp: usize,
         mod_exp: usize,
         chunk_size: usize,
+    }
+
+    fn horrible_mod(mut x: BigInt, y: &BigInt) -> BigInt {
+        if *y <= BigInt::ZERO {
+            panic!("Mod by non-positive number")
+        }
+        if x < BigInt::ZERO {
+            let mut shifted = -y.clone();
+            while x < shifted {
+                shifted = &shifted << BitShift::from_usize(1);
+            }
+            x -= shifted;
+        }
+        while x >= *y {
+            let mut shifted = y << BitShift::from_usize(1);
+            let mut prior = y.clone();
+            while x >= shifted {
+                std::mem::swap(&mut shifted, &mut prior);
+                shifted = &shifted << BitShift::from_usize(2);
+            }
+            x -= prior;
+        }
+        x
     }
     fn any_fourier_inputs() -> impl Strategy<Value = FourierInputs> {
         (1u32..5, nonnegative_bigint(0..10)).prop_map(|(chunks_exp, x)| {
@@ -242,6 +277,7 @@ mod tests {
     }
     #[test]
     fn test_fourier_inv_hardcoded() {
+        /*
         check_fourier_inv(
             BigInt {
                 negative: false,
@@ -253,6 +289,16 @@ mod tests {
         );
         check_fourier_inv(BigInt::from_u64(0x100000001), 1, 1, 2);
         check_fourier_inv(BigInt::from_u64(0x4000000000000001), 1, 1, 2);
+        */
+        check_fourier_inv(
+            BigInt {
+                negative: false,
+                digits: vec![0, 0, 1],
+            },
+            1,
+            1,
+            2,
+        );
     }
     #[derive(Debug)]
     struct AddFourierTermInputs {
