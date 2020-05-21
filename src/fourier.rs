@@ -70,7 +70,13 @@ fn fourier_inner_fast<F: FourierMethod>(
     // Make the borrow checker happy by doing this before the borrow
     let order = out.len();
     let half_len = out.len() / 2;
-    if order <= 2 {
+    // Benchmarks for 10k*10k fourier_mul:
+    // 2: 246,400,190 ns/iter
+    // 4: 171,149,792 ns/iter
+    // 8:  83,501,405 ns/iter
+    // 16: 83,113,803 ns/iter
+    // 32: 83,346,466 ns/iter
+    if order <= 16 {
         fourier_inner_quadratic::<F>(mod_exp, xs, stride, out);
         return;
     }
@@ -459,7 +465,7 @@ mod tests {
     }
     proptest! {
         #[test]
-        fn test_fourier_mul(a in any_bigint(0..20),b in any_bigint(0..20)) {
+        fn test_fourier_mul(a in any_bigint(0..100),b in any_bigint(0..100)) {
             let expected = schoolbook_mul(&a, &b);
             let actual = fourier_mul(&a, &b);
             assert_eq!(expected, actual);
