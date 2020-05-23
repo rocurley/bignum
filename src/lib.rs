@@ -4,8 +4,6 @@ extern crate packed_simd;
 extern crate proptest;
 #[cfg(test)]
 extern crate test;
-#[cfg(test)]
-mod benchmarks;
 
 use karatsuba::karatsuba_mul;
 use schoolbook_mul::schoolbook_mul;
@@ -96,12 +94,15 @@ impl BigInt {
             self.negative = !self.negative;
         }
     }
-    fn from_u64(x: u64) -> Self {
+    pub fn from_u64(x: u64) -> Self {
         BigInt {
             digits: vec![x],
             negative: false,
         }
         .normalize()
+    }
+    pub fn from_digits(digits: Vec<u64>, negative: bool) -> Self {
+        BigInt { digits, negative }.normalize()
     }
 }
 

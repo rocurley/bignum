@@ -2,10 +2,20 @@ use crate::low_level::{split_digits_iter, BitShift};
 use crate::BigInt;
 
 pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
-    let chunks_exp = 3usize;
-    let chunks = 2usize.pow(chunks_exp as u32);
     let output_len = x.digits.len() + y.digits.len() + 1;
+    // 100k benchmarks:
+    // 3 : [2.0965 s 2.1230 s 2.1747 s]
+    // 4 : [1.7231 s 1.7627 s 1.8012 s]
+    // 5 : [1.2545 s 1.2652 s 1.2864 s]
+    // 6 : [981.68 ms 1.0015 s 1.0270 s]
+    // 7 : [721.56 ms 722.83 ms 723.81 ms]
+    // 8 : [610.21 ms 617.54 ms 630.83 ms]
+    // 9 : [588.68 ms 596.32 ms 612.42 ms]
+    //10 : [684.76 ms 696.90 ms 716.33 ms]
+    let chunks_exp = 9usize; // TODO: tune this, ideally scale with input size
+    let chunks = 2usize.pow(chunks_exp as u32);
     let chunk_size = (output_len + chunks - 1) / chunks;
+    // TODO: shouldn't we be dividing chunks_exp by 64?
     let mod_exp = 2 * chunk_size + chunks_exp + 3; //Why 3?
     let p = fourier(mod_exp, chunk_size, chunks_exp, &x);
     let q = fourier(mod_exp, chunk_size, chunks_exp, &y);
@@ -32,7 +42,6 @@ pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: &BigInt)
     let split: Vec<BigInt> = split_digits_iter(&x.digits, chunk_size)
         .take(chunks)
         .collect();
-    dbg!(&split);
     let mut out = vec![BigInt::ZERO; chunks];
     fourier_inner_fast::<NormalF>(mod_exp, &split, 1, &mut out);
     out
@@ -83,8 +92,6 @@ fn fourier_inner_fast<F: FourierMethod>(
     let (left_out, right_out) = out.split_at_mut(half_len);
     fourier_inner_fast::<F>(mod_exp, xs, stride * 2, left_out);
     fourier_inner_fast::<F>(mod_exp, &xs[stride..], stride * 2, right_out);
-    dbg!(&*left_out);
-    dbg!(&*right_out);
     for (i, (l, r)) in left_out.iter_mut().zip(right_out.iter_mut()).enumerate() {
         // Want:
         // l = l + r g^i
@@ -101,7 +108,6 @@ fn fourier_inner_fast<F: FourierMethod>(
         add_fourier_term(l, &r, F::pow(i, 1, order), order, mod_exp);
         *r = new_r;
     }
-    dbg!(out);
 }
 
 fn fourier_inner_quadratic<F: FourierMethod>(
