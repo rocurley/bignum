@@ -1,20 +1,32 @@
-use crate::low_level::{add_to_digits, add_u128_to_digits_with_carry};
+use crate::low_level::{add_assign_digits_slice, add_to_digits, add_u128_to_digits_with_carry};
 use crate::BigInt;
 
+fn mul_u64(x: u64, y: u64) -> (u64, u64) {
+    let merged = (x as u128) * (y as u128);
+    (merged as u64, (merged >> 64) as u64)
+}
+
 pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
-    let mut digits = vec![0; l.digits.len() + r.digits.len() + 1];
+    let mut digits = vec![0u64; l.digits.len() + r.digits.len() + 1];
+    let mut buffer = vec![0; r.digits.len() + r.digits.len() % 2]; // round up to even
     for (i, &l_digit) in l.digits.iter().enumerate() {
-        let mut carry: bool = false;
-        let mut digits_iter = digits[i..].iter_mut();
-        let mut digit0 = digits_iter.next().unwrap();
-        for (&r_digit, digit1) in r.digits.iter().zip(digits_iter) {
-            let prod = (l_digit as u128) * (r_digit as u128) + ((carry as u128) << 64);
-            carry = add_u128_to_digits_with_carry(prod, digit0, digit1);
-            digit0 = digit1;
+        for (r_chunk, buffer_chunk) in r.digits.chunks(2).zip(buffer.chunks_mut(2)) {
+            let prod = mul_u64(r_chunk[0], l_digit);
+            buffer_chunk[0] = prod.0;
+            buffer_chunk[1] = prod.1;
         }
-        if carry {
-            add_to_digits(1, &mut digits[i + r.digits.len()..]);
+        add_assign_digits_slice(&mut digits[i..], buffer.iter().copied());
+        for (r_chunk, buffer_chunk) in r.digits.chunks_exact(2).zip(buffer.chunks_mut(2)) {
+            let prod = mul_u64(r_chunk[1], l_digit);
+            buffer_chunk[0] = prod.0;
+            buffer_chunk[1] = prod.1;
         }
+        let restricted_buffer = if r.digits.len() % 2 == 1 {
+            &buffer[..buffer.len() - 2]
+        } else {
+            &buffer
+        };
+        add_assign_digits_slice(&mut digits[i + 1..], restricted_buffer.iter().copied());
     }
     let negative = l.negative ^ r.negative;
     BigInt { digits, negative }.normalize()
@@ -26,11 +38,6 @@ mod tests {
     use crate::test_utils::*;
     use crate::BigInt;
     use proptest::prelude::*;
-
-    fn mul_u64(x: u64, y: u64) -> (u64, u64) {
-        let merged = (x as u128) * (y as u128);
-        (merged as u64, (merged >> 64) as u64)
-    }
 
     proptest! {
         #[test]
@@ -67,10 +74,7 @@ mod tests {
     }
     #[test]
     fn hardcoded() {
-        let a = BigInt {
-            digits: vec![2],
-            negative: false,
-        };
+        let a = BigInt::from_u64(2);
         let b = BigInt {
             digits: vec![0x8000000000000000, 1],
             negative: false,
@@ -80,6 +84,11 @@ mod tests {
             digits: vec![0, 3],
             negative: false,
         };
+        assert_eq!(prod, c);
+        let a = BigInt::from_u64(1);
+        let b = BigInt::from_u64(1);
+        let prod = schoolbook_mul(&a, &b);
+        let c = BigInt::from_u64(1);
         assert_eq!(prod, c);
     }
 }
