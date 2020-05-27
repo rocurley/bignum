@@ -44,16 +44,24 @@ pub fn add_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
 }
 
 pub fn add_assign_digits_slice<I: Iterator<Item = u64>>(target: &mut [u64], other: I) {
-    let mut carry = false;
+    let mut carry = 0;
     let mut len = 0;
     for (target_digit, other_digit) in target.iter_mut().zip(other) {
         len += 1;
-        let (res, carry1) = target_digit.overflowing_add(carry as u64);
-        let (res, carry2) = res.overflowing_add(other_digit);
-        *target_digit = res;
-        carry = carry1 || carry2;
+        unsafe {
+            asm!{"
+                addq {carry:r}, {x}
+                adcq {y}, {x}
+                setb {carry:l}
+            ",
+            carry = inout(reg) carry,
+            x = inout(reg) *target_digit,
+            y = in(reg) other_digit,
+            options(att_syntax),
+            };
+        }
     }
-    if carry {
+    if carry > 0 {
         add_to_digits(1, &mut target[len..]);
     }
 }
