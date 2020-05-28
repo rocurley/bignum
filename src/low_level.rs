@@ -43,9 +43,41 @@ pub fn add_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
     add_assign_digits_slice(&mut *target, other);
 }
 
+
 pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
     let mut carry = 0;
-    for (target_digit, &other_digit) in target.iter_mut().zip(other) {
+    let chunk_size = 6;
+    for (target_chunk, other_chunk) in target.chunks_exact_mut(chunk_size).zip(&mut other.chunks_exact(chunk_size)) {
+        unsafe {
+            asm!{"
+                addq {carry:r}, {x0}
+                adcq {y0}, {x0}
+                adcq {y1}, {x1}
+                adcq {y2}, {x2}
+                adcq {y3}, {x3}
+                adcq {y4}, {x4}
+                adcq {y5}, {x5}
+                setb {carry:l}
+            ",
+            carry = inout(reg) carry,
+            x0 = inout(reg) target_chunk[0],
+            x1 = inout(reg) target_chunk[1],
+            x2 = inout(reg) target_chunk[2],
+            x3 = inout(reg) target_chunk[3],
+            x4 = inout(reg) target_chunk[4],
+            x5 = inout(reg) target_chunk[5],
+            y0 = in(reg) other_chunk[0],
+            y1 = in(reg) other_chunk[1],
+            y2 = in(reg) other_chunk[2],
+            y3 = in(reg) other_chunk[3],
+            y4 = in(reg) other_chunk[4],
+            y5 = in(reg) other_chunk[5],
+            options(att_syntax),
+            };
+        }
+    }
+    let cleanup_idx = other.len() - other.len() % chunk_size;
+    for (target_digit, &other_digit) in target[cleanup_idx..].iter_mut().zip(&other[cleanup_idx..]) {
         unsafe {
             asm!{"
                 addq {carry:r}, {x}
