@@ -56,26 +56,27 @@ pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
         // You can't addc into memory from memory, so you need to read one of the arguments from
         // memory. If you read the target, you have to write it back, but your addc is cheaper, so
         // it should take the same number of cycles.
+        // However, that is not the case! In fact, loading the xs into registers, instead of the
+        // ys, is about 2x faster. No clue why.
         unsafe {
             asm!{"
                 addq {carry:r}, {x0}
-                adcq {y0}, {x0}
-                adcq {y1}, ({x1})
-                adcq {y2}, 8({x1})
-                adcq {y3}, 16({x1})
-                adcq {y4}, 24({x1})
-                adcq {y5}, 32({x1})
+                adcq 0x00({y0}), {x0}
+                adcq 0x08({y0}), {x1}
+                adcq 0x10({y0}), {x2}
+                adcq 0x18({y0}), {x3}
+                adcq 0x20({y0}), {x4}
+                adcq 0x28({y0}), {x5}
                 setb {carry:l}
             ",
             carry = inout(reg) carry,
+            y0 = in(reg) &other_chunk[0],
             x0 = inout(reg) target_chunk[0],
-            x1 = in(reg) &target_chunk[1],
-            y0 = in(reg) other_chunk[0],
-            y1 = in(reg) other_chunk[1],
-            y2 = in(reg) other_chunk[2],
-            y3 = in(reg) other_chunk[3],
-            y4 = in(reg) other_chunk[4],
-            y5 = in(reg) other_chunk[5],
+            x1 = inout(reg) target_chunk[1],
+            x2 = inout(reg) target_chunk[2],
+            x3 = inout(reg) target_chunk[3],
+            x4 = inout(reg) target_chunk[4],
+            x5 = inout(reg) target_chunk[5],
             options(att_syntax),
             };
         }
