@@ -52,20 +52,16 @@ pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
             asm!{"
                 addq {carry:r}, {x0}
                 adcq {y0}, {x0}
-                adcq {y1}, {x1}
-                adcq {y2}, {x2}
-                adcq {y3}, {x3}
-                adcq {y4}, {x4}
-                adcq {y5}, {x5}
+                adcq {y1}, ({x1})
+                adcq {y2}, 8({x1})
+                adcq {y3}, 16({x1})
+                adcq {y4}, 24({x1})
+                adcq {y5}, 32({x1})
                 setb {carry:l}
             ",
             carry = inout(reg) carry,
             x0 = inout(reg) target_chunk[0],
-            x1 = inout(reg) target_chunk[1],
-            x2 = inout(reg) target_chunk[2],
-            x3 = inout(reg) target_chunk[3],
-            x4 = inout(reg) target_chunk[4],
-            x5 = inout(reg) target_chunk[5],
+            x1 = in(reg) &target_chunk[1],
             y0 = in(reg) other_chunk[0],
             y1 = in(reg) other_chunk[1],
             y2 = in(reg) other_chunk[2],
