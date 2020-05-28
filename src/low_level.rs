@@ -43,7 +43,21 @@ pub fn add_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
     add_assign_digits_slice(&mut *target, other);
 }
 
+#[cfg(not(all(target_arch = "x86_64", feature = "asm")))]
+pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
+    let mut carry = false;
+    for (target_digit, &other_digit) in target.iter_mut().zip(other) {
+        let (res, carry1) = target_digit.overflowing_add(carry as u64);
+        let (res, carry2) = res.overflowing_add(other_digit);
+        *target_digit = res;
+        carry = carry1 || carry2;
+    }
+    if carry {
+        add_to_digits(1, &mut target[other.len()..]);
+    }
+}
 
+#[cfg(all(target_arch = "x86_64", feature = "asm"))]
 pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
     let mut carry = 0;
     let chunk_size = 6;
