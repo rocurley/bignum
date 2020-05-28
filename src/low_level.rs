@@ -40,14 +40,12 @@ pub fn add_u128_to_digits_with_carry(x: u128, digit0: &mut u64, digit1: &mut u64
 pub fn add_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
     let target_len = std::cmp::max(target.len(), other.len()) + 1;
     target.resize(target_len, 0);
-    add_assign_digits_slice(&mut *target, other.iter().copied());
+    add_assign_digits_slice(&mut *target, other);
 }
 
-pub fn add_assign_digits_slice<I: Iterator<Item = u64>>(target: &mut [u64], other: I) {
+pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
     let mut carry = 0;
-    let mut len = 0;
-    for (target_digit, other_digit) in target.iter_mut().zip(other) {
-        len += 1;
+    for (target_digit, &other_digit) in target.iter_mut().zip(other) {
         unsafe {
             asm!{"
                 addq {carry:r}, {x}
@@ -62,7 +60,7 @@ pub fn add_assign_digits_slice<I: Iterator<Item = u64>>(target: &mut [u64], othe
         }
     }
     if carry > 0 {
-        add_to_digits(1, &mut target[len..]);
+        add_to_digits(1, &mut target[other.len()..]);
     }
 }
 
