@@ -48,6 +48,14 @@ pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
     let mut carry = 0;
     let chunk_size = 6;
     for (target_chunk, other_chunk) in target.chunks_exact_mut(chunk_size).zip(&mut other.chunks_exact(chunk_size)) {
+        // According to https://www.agner.org/optimize/ for Haswell:
+        // Read from memory into register: 0.5 clock cycles
+        // Write from register into memory: 1 clock cycle
+        // Addc into register: 1
+        // Addc into memory: 2
+        // You can't addc into memory from memory, so you need to read one of the arguments from
+        // memory. If you read the target, you have to write it back, but your addc is cheaper, so
+        // it should take the same number of cycles.
         unsafe {
             asm!{"
                 addq {carry:r}, {x0}
