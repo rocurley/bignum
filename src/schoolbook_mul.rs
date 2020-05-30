@@ -26,7 +26,7 @@ pub fn schoolbook_mul(l: &BigInt, r: &BigInt) -> BigInt {
     }
 
 pub fn schoolbook_mul_asm(l: &BigInt, r: &BigInt) -> BigInt {
-    const CHUNK_SIZE : usize = 4;
+    const CHUNK_SIZE : usize = 3;
     let mut digits = vec![0; l.digits.len() + r.digits.len() + 1];
     for (i, &l_digit) in l.digits.iter().enumerate() {
         let mut carry: u64 = 0;
@@ -44,23 +44,15 @@ pub fn schoolbook_mul_asm(l: &BigInt, r: &BigInt) -> BigInt {
                     movq %rdx, {h1}
                     movq 0x10({y0}), %rax
                     mulq {x}
-                    movq %rax, {l2}
-                    movq %rdx, {h2}
-                    movq 0x18({y0}), %rax
-                    mulq {x}
-                    movq %rax, {l3}
-                    movq %rdx, {h3}
 
                     add {l0}, {d0}
                     adc {l1}, {d1}
-                    adc {l2}, {d2}
-                    adc {l3}, {d3}
-                    adc $0, {h3}
+                    adc %rax, {d2}
+                    adc $0, %rdx
                     add {carry:r}, {h0}
                     add {h0}, {d1}
                     adc {h1}, {d2}
-                    adc {h2}, {d3}
-                    adc {h3}, {d4}
+                    adc %rdx, {d3}
                     setb {carry:l}
                 ",
                 carry = inout(reg) carry,
@@ -68,25 +60,20 @@ pub fn schoolbook_mul_asm(l: &BigInt, r: &BigInt) -> BigInt {
                 y0 = in(reg) &r_digits[0],
                 l0 = out(reg) _,
                 l1 = out(reg) _,
-                l2 = out(reg) _,
-                l3 = out(reg) _,
                 h0 = out(reg) _,
                 h1 = out(reg) _,
-                h2 = out(reg) _,
-                h3 = out(reg) _,
                 d0 = inout(reg) *digit0,
                 d1 = inout(reg) digits_chunk[0],
                 d2 = inout(reg) digits_chunk[1],
                 d3 = inout(reg) digits_chunk[2],
-                d4 = inout(reg) digits_chunk[3],
                 out("rax") _,
                 out("rdx") _,
                 options(att_syntax),
                 };
             }
-            digit0 = &mut digits_chunk[3];
+            digit0 = &mut digits_chunk[CHUNK_SIZE-1];
         }
-        let offset = r.digits.len() - r.digits.len() % 4;
+        let offset = r.digits.len() - r.digits.len() % CHUNK_SIZE;
         let mut digits_iter = digits[i+offset..].iter_mut();
         let mut digit0 = digits_iter.next().unwrap();
         for (&r_digit, digit1) in r.digits[offset..].iter().zip(digits_iter) {
