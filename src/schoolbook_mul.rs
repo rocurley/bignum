@@ -45,14 +45,14 @@ pub fn schoolbook_mul_asm(l: &BigInt, r: &BigInt) -> BigInt {
                     movq 0x10({y0}), %rax
                     mulq {x}
 
-                    add {l0}, {d0}
+                    add {l0}, 0x00({d0})
                     adc {l1}, {d1}
                     adc %rax, {d2}
                     adc $0, %rdx
                     add {carry:r}, {h0}
                     add {h0}, {d1}
                     adc {h1}, {d2}
-                    adc %rdx, {d3}
+                    adc %rdx, 0x18({d0})
                     setb {carry:l}
                 ",
                 carry = inout(reg) carry,
@@ -62,10 +62,9 @@ pub fn schoolbook_mul_asm(l: &BigInt, r: &BigInt) -> BigInt {
                 l1 = out(reg) _,
                 h0 = out(reg) _,
                 h1 = out(reg) _,
-                d0 = inout(reg) *digit0,
+                d0 = in(reg) digit0,
                 d1 = inout(reg) digits_chunk[0],
                 d2 = inout(reg) digits_chunk[1],
-                d3 = inout(reg) digits_chunk[2],
                 out("rax") _,
                 out("rdx") _,
                 options(att_syntax),
