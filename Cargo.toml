@@ -3,6 +3,9 @@ name = "bigmul"
 version = "0.1.0"
 authors = ["Roger Curley <rocurley@gmail.com>"]
 edition = "2018"
+[features]
+default = ["asm"]
+asm = []
 
 [lib]
 bench = false

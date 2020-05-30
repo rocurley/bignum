@@ -40,21 +40,78 @@ pub fn add_u128_to_digits_with_carry(x: u128, digit0: &mut u64, digit1: &mut u64
 pub fn add_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
     let target_len = std::cmp::max(target.len(), other.len()) + 1;
     target.resize(target_len, 0);
-    add_assign_digits_slice(&mut *target, other.iter().copied());
+    add_assign_digits_slice(&mut *target, other);
 }
 
-pub fn add_assign_digits_slice<I: Iterator<Item = u64>>(target: &mut [u64], other: I) {
+#[cfg(not(all(target_arch = "x86_64", feature = "asm")))]
+pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
     let mut carry = false;
-    let mut len = 0;
-    for (target_digit, other_digit) in target.iter_mut().zip(other) {
-        len += 1;
+    for (target_digit, &other_digit) in target.iter_mut().zip(other) {
         let (res, carry1) = target_digit.overflowing_add(carry as u64);
         let (res, carry2) = res.overflowing_add(other_digit);
         *target_digit = res;
         carry = carry1 || carry2;
     }
     if carry {
-        add_to_digits(1, &mut target[len..]);
+        add_to_digits(1, &mut target[other.len()..]);
+    }
+}
+
+#[cfg(all(target_arch = "x86_64", feature = "asm"))]
+pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
+    let mut carry = 0;
+    let chunk_size = 6;
+    for (target_chunk, other_chunk) in target.chunks_exact_mut(chunk_size).zip(&mut other.chunks_exact(chunk_size)) {
+        // According to https://www.agner.org/optimize/ for Haswell:
+        // Read from memory into register: 0.5 clock cycles
+        // Write from register into memory: 1 clock cycle
+        // Addc into register: 1
+        // Addc into memory: 2
+        // You can't addc into memory from memory, so you need to read one of the arguments from
+        // memory. If you read the target, you have to write it back, but your addc is cheaper, so
+        // it should take the same number of cycles.
+        // However, that is not the case! In fact, loading the xs into registers, instead of the
+        // ys, is about 2x faster. No clue why.
+        unsafe {
+            asm!{"
+                addq {carry:r}, {x0}
+                adcq 0x00({y0}), {x0}
+                adcq 0x08({y0}), {x1}
+                adcq 0x10({y0}), {x2}
+                adcq 0x18({y0}), {x3}
+                adcq 0x20({y0}), {x4}
+                adcq 0x28({y0}), {x5}
+                setb {carry:l}
+            ",
+            carry = inout(reg) carry,
+            y0 = in(reg) &other_chunk[0],
+            x0 = inout(reg) target_chunk[0],
+            x1 = inout(reg) target_chunk[1],
+            x2 = inout(reg) target_chunk[2],
+            x3 = inout(reg) target_chunk[3],
+            x4 = inout(reg) target_chunk[4],
+            x5 = inout(reg) target_chunk[5],
+            options(att_syntax),
+            };
+        }
+    }
+    let cleanup_idx = other.len() - other.len() % chunk_size;
+    for (target_digit, &other_digit) in target[cleanup_idx..].iter_mut().zip(&other[cleanup_idx..]) {
+        unsafe {
+            asm!{"
+                addq {carry:r}, {x}
+                adcq {y}, {x}
+                setb {carry:l}
+            ",
+            carry = inout(reg) carry,
+            x = inout(reg) *target_digit,
+            y = in(reg) other_digit,
+            options(att_syntax),
+            };
+        }
+    }
+    if carry > 0 {
+        add_to_digits(1, &mut target[other.len()..]);
     }
 }
 
