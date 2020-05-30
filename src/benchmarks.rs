@@ -3,7 +3,7 @@ extern crate rand_chacha;
 use bigmul::div::{div_exact, inv_u64};
 use bigmul::fourier::fourier_mul;
 use bigmul::karatsuba::karatsuba_mul;
-use bigmul::schoolbook_mul::schoolbook_mul;
+use bigmul::schoolbook_mul::{schoolbook_mul, schoolbook_mul_asm};
 use bigmul::schoolbook_mul_vec::schoolbook_mul_vec;
 use bigmul::toom::toom_3;
 use bigmul::BigInt;
@@ -40,6 +40,14 @@ fn bench_schoolbook_mul(c: &mut Criterion) {
     let b = random_bigint(&mut rng, 1000);
     c.bench_function("schoolbook_mul_1k", |bench| {
         bench.iter(|| schoolbook_mul(&a, &b))
+    });
+}
+fn bench_schoolbook_mul_asm(c: &mut Criterion) {
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+    let a = random_bigint(&mut rng, 1000);
+    let b = random_bigint(&mut rng, 1000);
+    c.bench_function("schoolbook_mul_asm_1k", |bench| {
+        bench.iter(|| schoolbook_mul_asm(&a, &b))
     });
 }
 fn bench_schoolbook_mul_vec(c: &mut Criterion) {
@@ -135,13 +143,14 @@ fn bench_div_six(c: &mut Criterion) {
 fn profiled() -> Criterion {
     Criterion::default()
         .sample_size(10)
-        .with_profiler(Profiler {})
+        //.with_profiler(Profiler {})
 }
 criterion_group!(
     name = benches;
     config = profiled();
     targets =
         bench_schoolbook_mul,
+        bench_schoolbook_mul_asm,
         bench_schoolbook_mul_vec,
         bench_karabtsuba_mul,
         bench_karabtsuba_mul_10k,
