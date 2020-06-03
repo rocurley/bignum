@@ -12,24 +12,25 @@ pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
     // 8 : [610.21 ms 617.54 ms 630.83 ms]
     // 9 : [588.68 ms 596.32 ms 612.42 ms]
     //10 : [684.76 ms 696.90 ms 716.33 ms]
-    let chunks_exp = 9usize; // TODO: tune this, ideally scale with input size
+    let chunks_exp = 8usize; // TODO: tune this, ideally scale with input size
     let chunks = 2usize.pow(chunks_exp as u32);
     let chunk_size = (output_len + chunks - 1) / chunks;
     // TODO: shouldn't we be dividing chunks_exp by 64?
     let mod_exp = 2 * chunk_size + chunks_exp + 3; //Why 3?
     let p = fourier(mod_exp, chunk_size, chunks_exp, &x);
     let q = fourier(mod_exp, chunk_size, chunks_exp, &y);
+    dbg!(&p,&q);
     let pq: Vec<BigInt> = p
         .into_iter()
         .zip(q.into_iter())
         .map(|(p, q)| succ_mod_3(&(&p * &q), mod_exp))
         .collect();
+    dbg!(&pq);
     let mut out = inv_fourier(mod_exp, chunk_size, &pq);
     out.negative = x.negative ^ y.negative;
     out.normalize()
 }
 
-// Not an FFT, just a reference implementation for testing.
 // mod_exp: B = 2^(64*mod_exp) + 1, fourier transform will be mod B.
 // chunks_exp: break up into a vector of 2^chunks_exp before FFT.
 // chunk_size: how big the chunks will be. Zero-pads as needed. If you want to recover the original
@@ -318,6 +319,12 @@ mod tests {
         check_fourier_inv(BigInt::from_u64(0x4000000000000001), 1, 1, 2);
         */
         check_fourier_inv(
+            BigInt::from_u64(1),
+            1,
+            1,
+            8,
+        );
+        check_fourier_inv(
             BigInt {
                 negative: false,
                 digits: vec![0, 0, 1],
@@ -479,7 +486,17 @@ mod tests {
     }
     #[test]
     fn test_fourier_mul_hardcoded() {
-        let test_cases = vec![(
+        let test_cases = vec![
+            (
+            BigInt {
+                negative: false,
+                digits: vec![1],
+            },
+            BigInt {
+                negative: false,
+                digits: vec![1],
+            }),
+            (
             BigInt {
                 negative: false,
                 digits: vec![0, 1],
