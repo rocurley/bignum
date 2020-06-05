@@ -1,6 +1,22 @@
 use crate::low_level::{split_digits_iter, BitShift};
 use crate::BigInt;
 
+fn compute_mod_exp(chunks_exp : u32, chunk_size: usize) -> usize {
+    // 2*64*chunk_size: product of two chunk_size sized numbers, in bits
+    // chunks_exp: When you add two numbers of length n, you get a number of length n+1.
+    // Organizing the 2^chunks_exp additions performed during a convolution into a tree shows that
+    // you add chunks_exp to the length.
+    let mod_exp_unrounded = 2 * chunk_size + (chunks_exp as usize + 3 + 63) / 64; //Why 3?
+    // Round up to the nearest multiple of 64
+    let mod_exp_rounding = 2usize.pow(std::cmp::max(6, chunks_exp as u32) - 6);
+    let rem = mod_exp_unrounded % mod_exp_rounding;
+    if rem == 0 {
+        mod_exp_unrounded
+    } else {
+        mod_exp_unrounded + mod_exp_rounding - rem
+    }
+}
+
 pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
     let output_len = x.digits.len() + y.digits.len() + 1;
     // 100k benchmarks:
@@ -12,11 +28,13 @@ pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
     // 8 : [610.21 ms 617.54 ms 630.83 ms]
     // 9 : [588.68 ms 596.32 ms 612.42 ms]
     //10 : [684.76 ms 696.90 ms 716.33 ms]
-    let chunks_exp = 9usize; // TODO: tune this, ideally scale with input size
+    // TODO: tune this, ideally scale with input size
+    // TODO: make this a u32, propegate
+    let chunks_exp = 9usize;
+    // We'll break things down into this many chunks
     let chunks = 2usize.pow(chunks_exp as u32);
-    let chunk_size = (output_len + chunks - 1) / chunks;
-    // TODO: shouldn't we be dividing chunks_exp by 64?
-    let mod_exp = 2 * chunk_size + chunks_exp + 3; //Why 3?
+    let chunk_size : usize = (output_len + chunks - 1) / chunks;
+    let mod_exp = compute_mod_exp(chunks_exp as u32, chunk_size);
     let p = fourier(mod_exp, chunk_size, chunks_exp, &x);
     let q = fourier(mod_exp, chunk_size, chunks_exp, &y);
     let pq: Vec<BigInt> = p
@@ -29,7 +47,6 @@ pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
     out.normalize()
 }
 
-// Not an FFT, just a reference implementation for testing.
 // mod_exp: B = 2^(64*mod_exp) + 1, fourier transform will be mod B.
 // chunks_exp: break up into a vector of 2^chunks_exp before FFT.
 // chunk_size: how big the chunks will be. Zero-pads as needed. If you want to recover the original
@@ -170,6 +187,7 @@ fn modular_shift(x: &BigInt, shift: usize, mod_exp: usize) -> BigInt {
 // acc += g^pow * x mod B
 // preserving 0 <= acc < B
 fn add_fourier_term(acc: &mut BigInt, x: &BigInt, pow: usize, order: usize, mod_exp: usize) {
+    debug_assert_eq!((2 * 64 * mod_exp) % order, 0);
     let prim_root_exp = 2 * 64 * mod_exp / order; // g = 2^prim_root_exp
     let root_pow_exp = prim_root_exp * (pow % order); // g^pow = 2^root_pow_exp
     *acc += modular_shift(x, root_pow_exp, mod_exp);
@@ -187,7 +205,7 @@ fn pow_succ(n: usize) -> BigInt {
     }
 }
 
-// Computes x mod (2^(64 mod_blocks) + 1). Limited to inputs of length 2*mod_blocks or less.
+// Computes x mod (2^(64 mod_blocks) + 1). Limited to inputs of length 3*mod_blocks or less.
 fn succ_mod_3(x: &BigInt, mod_blocks: usize) -> BigInt {
     if mod_blocks == 0 {
         return BigInt::ZERO;
@@ -226,7 +244,8 @@ fn succ_mod_2(x: &BigInt, mod_blocks: usize) -> BigInt {
     // x0 - x1
     debug_assert!(
         x.digits.len() <= mod_blocks * 2,
-        "Expected {} <= {}",
+        "Expected len({:?}) = {} <= {}",
+        x.digits,
         x.digits.len(),
         mod_blocks * 2
     );
@@ -249,6 +268,19 @@ mod tests {
     use crate::schoolbook_mul;
     use crate::test_utils::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn test_mod_exp_hardcoded() {
+        let mod_exp = compute_mod_exp(6, 1);
+        assert_eq!(mod_exp, 3);
+        let mod_exp = compute_mod_exp(7, 1);
+        assert_eq!(mod_exp, 4);
+        let mod_exp = compute_mod_exp(8, 1);
+        assert_eq!(mod_exp, 4);
+        let mod_exp = compute_mod_exp(9, 1);
+        assert_eq!(mod_exp, 8);
+    }
+
     #[derive(Debug)]
     struct FourierInputs {
         x: BigInt,
@@ -304,6 +336,15 @@ mod tests {
     }
     #[test]
     fn test_fourier_inv_hardcoded() {
+        check_fourier_inv(
+            BigInt {
+                negative: false,
+                digits: vec![0, 1],
+            },
+            3,
+            1,
+            4,
+        );
         /*
         check_fourier_inv(
             BigInt {
@@ -318,6 +359,12 @@ mod tests {
         check_fourier_inv(BigInt::from_u64(0x4000000000000001), 1, 1, 2);
         */
         check_fourier_inv(
+            BigInt::from_u64(1),
+            4,
+            1,
+            8,
+        );
+        check_fourier_inv(
             BigInt {
                 negative: false,
                 digits: vec![0, 0, 1],
@@ -327,7 +374,7 @@ mod tests {
             2,
         );
     }
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     struct AddFourierTermInputs {
         acc: BigInt,
         x: BigInt,
@@ -336,7 +383,7 @@ mod tests {
         mod_exp: usize,
     }
     fn any_add_fourier_term_inputs() -> impl Strategy<Value = AddFourierTermInputs> {
-        ((1u32..5), (1usize..100)).prop_flat_map(|(k, mod_exp_mul)| {
+        ((1u32..10), (1usize..100)).prop_flat_map(|(k, mod_exp_mul)| {
             let order = 2usize.pow(k);
             let mod_exp_divisor_pow = std::cmp::max(6 /*64=2^6*/, k) - 6;
             let mod_exp = 2usize.pow(mod_exp_divisor_pow) * mod_exp_mul;
@@ -367,20 +414,50 @@ mod tests {
         let prim_root = &BigInt::from_u64(1) << BitShift::from_usize(prim_root_exp);
         let mut to_add = inputs.x;
         for _ in 0..inputs.pow {
-            to_add = succ_mod_2(&(&to_add * &prim_root), inputs.mod_exp);
+            to_add = succ_mod_3(&(&to_add * &prim_root), inputs.mod_exp);
         }
-        let expected = succ_mod_2(&(inputs.acc + to_add), inputs.mod_exp);
+        let expected = succ_mod_3(&(inputs.acc + to_add), inputs.mod_exp);
         assert_eq!(actual, expected);
+    }
+    fn check_add_fourier_term_order(inputs: AddFourierTermInputs) {
+        if inputs.pow % inputs.order == 0 {
+            return;
+        }
+        let mut actual = inputs.acc.clone();
+        for i in 0..inputs.order {
+            add_fourier_term(
+                &mut actual,
+                &inputs.x,
+                inputs.pow * i,
+                inputs.order,
+                inputs.mod_exp,
+            );
+        }
+        assert_eq!(actual, inputs.acc);
     }
     proptest! {
         #[test]
         fn test_add_fourier_term(inputs in any_add_fourier_term_inputs()) {
-            check_add_fourier_term(inputs)
+            check_add_fourier_term(inputs.clone());
+            check_add_fourier_term_order(inputs);
         }
     }
     #[test]
     fn test_add_fourier_term_hardcoded() {
         let test_cases = vec![
+            AddFourierTermInputs {
+                acc: BigInt{
+                    negative: false,
+                    digits: vec![0xfffeffffff000001, 0x1000001000000ff, 0xfffffeffffff0000],
+                },
+                x: BigInt {
+                    negative: false,
+                    digits: vec![0xffffffffff000001, 0xffffffffffffffff, 0xffffffffffffffff]
+                },
+                pow: 4,
+                order: 16,
+                mod_exp: 3,
+            },
             AddFourierTermInputs {
                 acc: BigInt::ZERO,
                 x: BigInt {
@@ -417,9 +494,17 @@ mod tests {
                 order: 4,
                 mod_exp: 1,
             },
+            AddFourierTermInputs {
+                acc: BigInt::ZERO,
+                x: BigInt { negative: false, digits: vec![0, 1] },
+                pow: 1,
+                order: 2,
+                mod_exp: 1
+            },
         ];
         for test_case in test_cases {
-            check_add_fourier_term(test_case);
+            check_add_fourier_term(test_case.clone());
+            check_add_fourier_term_order(test_case);
         }
     }
     proptest! {
@@ -479,16 +564,29 @@ mod tests {
     }
     #[test]
     fn test_fourier_mul_hardcoded() {
-        let test_cases = vec![(
-            BigInt {
-                negative: false,
-                digits: vec![0, 1],
-            },
-            BigInt {
-                negative: false,
-                digits: vec![0, 0, 0, 0, 0, 0, 0, 1],
-            },
-        )];
+        let test_cases = vec![
+            (BigInt::from_u64(1), BigInt::from_u64(1)),
+            (
+                BigInt {
+                    negative: false,
+                    digits: vec![1],
+                },
+                BigInt {
+                    negative: false,
+                    digits: vec![0, 1],
+                },
+            ),
+            (
+                BigInt {
+                    negative: false,
+                    digits: vec![0, 1],
+                },
+                BigInt {
+                    negative: false,
+                    digits: vec![0, 0, 0, 0, 0, 0, 0, 1],
+                },
+            ),
+        ];
         for (a, b) in test_cases {
             let expected = schoolbook_mul(&a, &b);
             let actual = fourier_mul(&a, &b);
