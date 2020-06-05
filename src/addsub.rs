@@ -211,4 +211,21 @@ mod tests {
             assert_eq!(reference_diff, a.clone() - b.clone());
         }
     }
+    #[test]
+    fn test_addition_hardcoded() {
+        let x = BigInt {
+            digits: vec![0x0, 0xff00000100000000, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffff],
+            negative: false,
+        };
+        let mut y = BigInt {
+            digits: vec![0xfffeffffff000001, 0x1000001000000ff, 0xfffffeffffff0000],
+            negative: false,
+        };
+        y += x;
+        let expected = BigInt {
+            digits: vec![0xfffeffffff000001, 0x2000000ff, 0xfffffeffffff0000, 0x0, 0x100000000],
+            negative: false,
+        };
+        assert_eq!(y, expected);
+    }
 }
