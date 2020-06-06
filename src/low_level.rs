@@ -43,8 +43,14 @@ pub fn add_assign_digits(target: &mut Vec<u64>, other: &[u64]) {
     add_assign_digits_slice(&mut *target, other);
 }
 
-#[cfg(not(all(target_arch = "x86_64", feature = "asm")))]
 pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
+    #[cfg(all(target_arch = "x86_64", feature = "asm"))]
+    add_assign_digits_slice_asm(target, other);
+    #[cfg(not(all(target_arch = "x86_64", feature = "asm")))]
+    add_assign_digits_slice_noasm(target, other);
+}
+
+pub fn add_assign_digits_slice_noasm(target: &mut [u64], other: &[u64]) {
     let mut carry = false;
     for (target_digit, &other_digit) in target.iter_mut().zip(other) {
         let (res, carry1) = target_digit.overflowing_add(carry as u64);
@@ -58,8 +64,8 @@ pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
 }
 
 #[cfg(all(target_arch = "x86_64", feature = "asm"))]
-pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
-    let mut carry = 0;
+pub fn add_assign_digits_slice_asm(target: &mut [u64], other: &[u64]) {
+    let mut carry = 0u8;
     let chunk_size = 6;
     for (target_chunk, other_chunk) in target.chunks_exact_mut(chunk_size).zip(&mut other.chunks_exact(chunk_size)) {
         // According to https://www.agner.org/optimize/ for Haswell:
@@ -74,16 +80,16 @@ pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
         // ys, is about 2x faster. No clue why.
         unsafe {
             asm!{"
-                addq {carry:r}, {x0}
+                shlb $8, {carry}
                 adcq 0x00({y0}), {x0}
                 adcq 0x08({y0}), {x1}
                 adcq 0x10({y0}), {x2}
                 adcq 0x18({y0}), {x3}
                 adcq 0x20({y0}), {x4}
                 adcq 0x28({y0}), {x5}
-                setb {carry:l}
+                setb {carry}
             ",
-            carry = inout(reg) carry,
+            carry = inout(reg_byte) carry,
             y0 = in(reg) &other_chunk[0],
             x0 = inout(reg) target_chunk[0],
             x1 = inout(reg) target_chunk[1],
@@ -99,11 +105,11 @@ pub fn add_assign_digits_slice(target: &mut [u64], other: &[u64]) {
     for (target_digit, &other_digit) in target[cleanup_idx..].iter_mut().zip(&other[cleanup_idx..]) {
         unsafe {
             asm!{"
-                addq {carry:r}, {x}
+                shlb $8, {carry}
                 adcq {y}, {x}
-                setb {carry:l}
+                setb {carry}
             ",
-            carry = inout(reg) carry,
+            carry = inout(reg_byte) carry,
             x = inout(reg) *target_digit,
             y = in(reg) other_digit,
             options(att_syntax),
@@ -361,5 +367,31 @@ mod tests {
             }
             assert_eq!(actual, expected);
         }
+    }
+    #[cfg(all(target_arch = "x86_64", feature = "asm"))]
+    proptest! {
+        #[test]
+        fn test_add_assign_digits_slice_asm(a in any_bigint(0..20),b in any_bigint(0..20)) {
+            let mut target: Vec<u64> = a.digits.clone();
+            let target_len = std::cmp::max(a.digits.len(), b.digits.len()) + 1;
+            target.resize(target_len, 0);
+
+            let mut expected = target.clone();
+            add_assign_digits_slice_noasm(&mut expected, &b.digits);
+            add_assign_digits_slice_asm(&mut target, &b.digits);
+            assert_eq!(expected, target);
+        }
+    }
+    #[test]
+    fn test_add_assign_digits_slice_asm_hardcoded() {
+        let other = vec![0xfffeffffff000001, 0x1000001000000ff, 0xfffffeffffff0000];
+        let mut target = vec![0x0, 0xff00000100000000, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffff];
+        let target_len = std::cmp::max(target.len(), other.len()) + 1;
+        target.resize(target_len, 0);
+
+        let mut expected = target.clone();
+        add_assign_digits_slice_noasm(&mut expected, &other);
+        add_assign_digits_slice_asm(&mut target, &other);
+        assert_eq!(expected, target, "\n{:x?} != {:x?}", expected, target);
     }
 }
