@@ -7,3 +7,5 @@
 cc 0dd07827afe688801d6d50307f2caf2e21130b88d7a51690fe08d3906c337563 # shrinks to a = BigInt { negative: false, digits: "[80000000000]" }, shift = 21
 cc c92d341eac6346f34dd0d8c0407212a1605dab9f9f0bfdda146ec16e58e48739 # shrinks to a = BigInt { negative: false, digits: "[1]" }, shift = 1
 cc 14c28856f85f4a3c1bffeb265aef885c3134120db690d95608df0bd83bc687cd # shrinks to a = BigInt { negative: false, digits: "[]" }, shift = 64
+cc 158faa4a8af1e69f0ce4a7035dc6af1d2947a1b78b91d62897cd99d73d763a53 # shrinks to x = 18446744073709551615
+cc 8a992d5d929bdb7f6bf839138c3ccbacd421455090e7736c2448a2021ebfe028 # shrinks to a = BigInt { negative: false, digits: "[0, 0, 0, 0, 0, ffffffffffffffff, ffffffffffffffff]" }, b = BigInt { negative: false, digits: "[0, 0, 0, 0, 0, 1, 1]" }

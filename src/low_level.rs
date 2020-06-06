@@ -329,6 +329,7 @@ mod tests {
         assert_eq!(a, unshifted);
     }
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50000))]
         #[test]
         fn test_shift_left_right_digits(a in any_bigint(0..20), shift in (0u8..63)) {
             check_shift_left_right_digits(a, shift);
@@ -343,21 +344,24 @@ mod tests {
         assert_eq!(a, unshifted);
     }
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50000))]
         #[test]
         fn test_shift_left_right(a in any_bigint(0..20), shift in any_bitshift(0..20)) {
             check_shift_left_right(a, shift);
         }
     }
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50000))]
         #[test]
         fn test_shl_digits_mul(a in any_bigint(0..20), shift in (0u8..63)) {
-        let digits: Vec<u64> = shl_digits(&a.digits, shift).collect();
-        let actual = BigInt{digits, negative: a.negative}.normalize();
-        let expected = &a * &BigInt::from_u64(2u64.pow(shift as u32));
-        assert_eq!(actual, expected);
+            let digits: Vec<u64> = shl_digits(&a.digits, shift).collect();
+            let actual = BigInt{digits, negative: a.negative}.normalize();
+            let expected = &a * &BigInt::from_u64(2u64.pow(shift as u32));
+            assert_eq!(actual, expected);
         }
     }
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50000))]
         #[test]
         fn test_shl_mul(a in any_bigint(0..20), shift in (0usize..500)) {
             let actual = &a << BitShift::from_usize(shift);
@@ -370,6 +374,7 @@ mod tests {
     }
     #[cfg(all(target_arch = "x86_64", feature = "asm"))]
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50000))]
         #[test]
         fn test_add_assign_digits_slice_asm(a in any_bigint(0..20),b in any_bigint(0..20)) {
             let mut target: Vec<u64> = a.digits.clone();
