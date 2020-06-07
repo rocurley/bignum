@@ -29,12 +29,11 @@ pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
     // 9 : [588.68 ms 596.32 ms 612.42 ms]
     //10 : [684.76 ms 696.90 ms 716.33 ms]
     // TODO: tune this, ideally scale with input size
-    // TODO: make this a u32, propegate
-    let chunks_exp = 9usize;
+    let chunks_exp = 9u32;
     // We'll break things down into this many chunks
-    let chunks = 2usize.pow(chunks_exp as u32);
+    let chunks = 2usize.pow(chunks_exp);
     let chunk_size : usize = (output_len + chunks - 1) / chunks;
-    let mod_exp = compute_mod_exp(chunks_exp as u32, chunk_size);
+    let mod_exp = compute_mod_exp(chunks_exp, chunk_size);
     let p = fourier(mod_exp, chunk_size, chunks_exp, &x);
     let q = fourier(mod_exp, chunk_size, chunks_exp, &y);
     let pq: Vec<BigInt> = p
@@ -51,11 +50,11 @@ pub fn fourier_mul(x: &BigInt, y: &BigInt) -> BigInt {
 // chunks_exp: break up into a vector of 2^chunks_exp before FFT.
 // chunk_size: how big the chunks will be. Zero-pads as needed. If you want to recover the original
 // result, chunk_size should be <= mod_exp.
-pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: usize, x: &BigInt) -> Vec<BigInt> {
+pub fn fourier(mod_exp: usize, chunk_size: usize, chunks_exp: u32, x: &BigInt) -> Vec<BigInt> {
     if *x == BigInt::ZERO {
         return Vec::new();
     }
-    let chunks = 2usize.pow(chunks_exp as u32); // 2^k
+    let chunks = 2usize.pow(chunks_exp); // 2^k
     let split: Vec<BigInt> = split_digits_iter(&x.digits, chunk_size)
         .take(chunks)
         .collect();
@@ -284,7 +283,7 @@ mod tests {
     #[derive(Debug)]
     struct FourierInputs {
         x: BigInt,
-        chunks_exp: usize,
+        chunks_exp: u32,
         mod_exp: usize,
         chunk_size: usize,
     }
@@ -317,13 +316,13 @@ mod tests {
             let chunk_size = (x.digits.len() + chunks - 1) / chunks;
             FourierInputs {
                 x,
-                chunks_exp: chunks_exp as usize,
+                chunks_exp,
                 mod_exp: chunk_size,
                 chunk_size,
             }
         })
     }
-    fn check_fourier_inv(x: BigInt, mod_exp: usize, chunk_size: usize, chunks_exp: usize) {
+    fn check_fourier_inv(x: BigInt, mod_exp: usize, chunk_size: usize, chunks_exp: u32) {
         let p = fourier(mod_exp, chunk_size, chunks_exp, &x);
         let x2 = inv_fourier(mod_exp, chunk_size, &p);
         assert_eq!(x, x2);
